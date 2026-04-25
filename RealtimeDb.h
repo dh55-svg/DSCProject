@@ -95,7 +95,7 @@ public:
         m_doubleBuffer->write(tagId, snapshot);
     }
 
-    void updateAlarmState(quint32 tagId, AlarmState state) {
+    void updateAlarmState(quint32 tagId, AlarmLimit state) {
         if (!m_doubleBuffer) return;
 
         auto snapshot = m_doubleBuffer->readTag(tagId);
@@ -156,7 +156,7 @@ public:
     }
 signals:
     void valueChanged(quint32 tagId, float newValue);
-    void alarmChanged(quint32 tagId, AlarmState newState);
+    void alarmChanged(quint32 tagId, AlarmLimit newState);
     void qualityChanged(quint32 tagId, DataQuality newQuality);
 private:
     RealtimeDb() = default;

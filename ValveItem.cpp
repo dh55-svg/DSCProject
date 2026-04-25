@@ -104,7 +104,7 @@ void ValveItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
     }
 
 
-    if (m_alarmState == AlarmState::HighHigh || m_alarmState == AlarmState::LowLow) {
+    if (m_alarmState == AlarmLimit::HighHigh || m_alarmState == AlarmLimit::LowLow) {
 
         QTime now = QTime::currentTime();
         if (now.msec() < 500) {
@@ -137,7 +137,7 @@ void ValveItem::updateAppearance() {
     );
 
 
-    if (m_alarmState != AlarmState::Normal) {
+    if (m_alarmState != AlarmLimit::Normal) {
         m_currentColor = alarmColor();
     }
 

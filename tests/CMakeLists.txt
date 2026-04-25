@@ -31,17 +31,23 @@ target_link_libraries(TestDoubleBuffer
 add_executable(TestAlarmEngine
     TestAlarmEngine.cpp
     ../AlarmEngine.cpp
+    ../AlarmKpiMonitor.cpp
+    ../AlarmChangeLog.cpp
     ../AuthManager.cpp
     ../DatabaseManager.cpp
     ../logger.cpp
+    ../TagConfigMgr.cpp
     # Headers listed for AUTOMOC
     ../AlarmEngine.h
+    ../AlarmKpiMonitor.h
+    ../AlarmChangeLog.h
     ../AuthManager.h
     ../DatabaseManager.h
     ../export.h
     ../TagDef.h
     ../LogLevelSpec.h
     ../logger.h
+    ../TagConfigMgr.h
 )
 target_link_libraries(TestAlarmEngine
     Qt6::Test Qt6::Core Qt6::Multimedia Qt6::Sql

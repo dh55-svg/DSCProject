@@ -20,7 +20,6 @@ class TestAlarmEngine : public QObject {
 private slots:
     void initTestCase()
     {
-        // Initialize DB with SQLite for alarm persistence
         Logger::instance().setLogLevel(Log_Level::Fatal);
         DatabaseManager::instance().initializeWithFallback(
             "localhost", 3306, "dcs_test", "root", "");
@@ -32,29 +31,33 @@ private slots:
     void testTriggerAndCount()
     {
         auto& alarm = AlarmEngine::instance();
-
         QCOMPARE(alarm.activeAlarmCount(), 0);
 
-        alarm.triggerAlarm(1, AlarmState::High, 85.0f, 80.0f);
-        pumpEvents();
+        // Use 50ms on-delay so alarm triggers within one timer tick
+        alarm.triggerAlarm(1, AlarmLimit::High, 85.0f, 80.0f,
+                           AlarmPriority::Major, AlarmClassification::Process, 50);
+        pumpEvents(600);  // Wait for on-delay + timer tick
         QCOMPARE(alarm.activeAlarmCount(), 1);
     }
 
     void testSeverityLevels()
     {
         auto& alarm = AlarmEngine::instance();
-        // trigger different severities
-        alarm.triggerAlarm(10, AlarmState::HighHigh, 95.0f, 90.0f);
-        alarm.triggerAlarm(11, AlarmState::High, 85.0f, 80.0f);
-        alarm.triggerAlarm(12, AlarmState::Low, 15.0f, 20.0f);
-        alarm.triggerAlarm(13, AlarmState::LowLow, 3.0f, 5.0f);
-        pumpEvents();
+        alarm.triggerAlarm(10, AlarmLimit::HighHigh, 95.0f, 90.0f,
+                           AlarmPriority::Critical, AlarmClassification::Process, 50);
+        alarm.triggerAlarm(11, AlarmLimit::High, 85.0f, 80.0f,
+                           AlarmPriority::Major, AlarmClassification::Process, 50);
+        alarm.triggerAlarm(12, AlarmLimit::Low, 15.0f, 20.0f,
+                           AlarmPriority::Major, AlarmClassification::Process, 50);
+        alarm.triggerAlarm(13, AlarmLimit::LowLow, 3.0f, 5.0f,
+                           AlarmPriority::Critical, AlarmClassification::Process, 50);
+        pumpEvents(600);
 
         QVERIFY(alarm.activeAlarmCount() >= 4);
-        QCOMPARE(alarm.activeAlarmCount(AlarmState::HighHigh), 1);
-        QCOMPARE(alarm.activeAlarmCount(AlarmState::High), 1);
-        QCOMPARE(alarm.activeAlarmCount(AlarmState::Low), 1);
-        QCOMPARE(alarm.activeAlarmCount(AlarmState::LowLow), 1);
+        QCOMPARE(alarm.activeAlarmCount(AlarmLimit::HighHigh), 1);
+        QCOMPARE(alarm.activeAlarmCount(AlarmLimit::High), 1);
+        QCOMPARE(alarm.activeAlarmCount(AlarmLimit::Low), 1);
+        QCOMPARE(alarm.activeAlarmCount(AlarmLimit::LowLow), 1);
     }
 
     void testDuplicateTriggerIgnored()
@@ -62,10 +65,11 @@ private slots:
         auto& alarm = AlarmEngine::instance();
         int before = alarm.activeAlarmCount();
 
-        alarm.triggerAlarm(1, AlarmState::High, 85.0f, 80.0f);
-        pumpEvents();
+        // Same tagId + same limit should be deduped
+        alarm.triggerAlarm(1, AlarmLimit::High, 85.0f, 80.0f,
+                           AlarmPriority::Major, AlarmClassification::Process, 50);
+        pumpEvents(600);
 
-        // alarm 1 already active, count should not increase
         QCOMPARE(alarm.activeAlarmCount(), before);
     }
 
@@ -74,25 +78,27 @@ private slots:
         auto& alarm = AlarmEngine::instance();
 
         // tag 20 starts with High
-        alarm.triggerAlarm(20, AlarmState::High, 85.0f, 80.0f);
-        pumpEvents();
+        alarm.triggerAlarm(20, AlarmLimit::High, 85.0f, 80.0f,
+                           AlarmPriority::Major, AlarmClassification::Process, 50);
+        pumpEvents(600);
 
         // escalate to HighHigh
-        alarm.triggerAlarm(20, AlarmState::HighHigh, 95.0f, 90.0f);
-        pumpEvents();
+        alarm.triggerAlarm(20, AlarmLimit::HighHigh, 95.0f, 90.0f,
+                           AlarmPriority::Critical, AlarmClassification::Process, 50);
+        pumpEvents(600);
 
-        QCOMPARE(alarm.activeAlarmCount(AlarmState::High), 0);
-        QCOMPARE(alarm.activeAlarmCount(AlarmState::HighHigh), 1);
+        QCOMPARE(alarm.activeAlarmCount(AlarmLimit::High), 0);
+        QCOMPARE(alarm.activeAlarmCount(AlarmLimit::HighHigh), 1);
     }
 
     void testAcknowledge()
     {
         auto& alarm = AlarmEngine::instance();
 
-        alarm.triggerAlarm(30, AlarmState::High, 85.0f, 80.0f);
-        pumpEvents();
+        alarm.triggerAlarm(30, AlarmLimit::High, 85.0f, 80.0f,
+                           AlarmPriority::Major, AlarmClassification::Process, 50);
+        pumpEvents(600);
 
-        // find the alarm ID for tag 30
         QList<AlarmEvent> active = alarm.activeAlarms();
         QString alarmId;
         for (const auto& a : active) {
@@ -106,7 +112,7 @@ private slots:
         alarm.acknowledgeAlarm(alarmId);
         pumpEvents();
 
-        // after acknowledge, alarm should still be active but acknowledged
+        // After ack, alarm remains active but acknowledged
         bool found = false;
         active = alarm.activeAlarms();
         for (const auto& a : active) {
@@ -131,33 +137,42 @@ private slots:
         }
     }
 
-    void testClearAlarm()
+    void testClearAlarmAndAckRTN()
     {
         auto& alarm = AlarmEngine::instance();
 
         int before = alarm.activeAlarmCount();
-        alarm.triggerAlarm(40, AlarmState::High, 85.0f, 80.0f);
-        pumpEvents();
+        alarm.triggerAlarm(40, AlarmLimit::High, 85.0f, 80.0f,
+                           AlarmPriority::Major, AlarmClassification::Process, 50);
+        pumpEvents(600);
         QVERIFY(alarm.activeAlarmCount() > before);
 
-        alarm.clearAlarm(40);
+        // clearAlarm transitions to RTN, does NOT remove from active list
+        alarm.clearAlarm(40, 75.0f);
         pumpEvents();
 
-        // verify tag 40 is no longer active
-        auto active = alarm.activeAlarms();
-        for (const auto& a : active) {
-            QVERIFY(a.tagId != 40);
-        }
+        // tag 40 should now be in RTN unacknowledged state
+        AlarmEvent ev = alarm.alarmByTagId(40);
+        QCOMPARE(ev.tagId, 40u);
+        QCOMPARE(ev.state, AlarmState::ReturnToNormalUnacknowledged);
+
+        // Acknowledge RTN to fully remove
+        alarm.acknowledgeReturnToNormalByTagId(40);
+        pumpEvents();
+
+        // Now tag 40 should be gone from active
+        ev = alarm.alarmByTagId(40);
+        QCOMPARE(ev.tagId, 0u);  // default-constructed AlarmEvent
     }
 
     void testHistorySize()
     {
         auto& alarm = AlarmEngine::instance();
-        auto all = alarm.allAlarms(10);
+        auto all = alarm.alarmHistory(10);
         QVERIFY(all.size() > 0);
         QVERIFY(all.size() <= 10);
 
-        auto full = alarm.allAlarms();
+        auto full = alarm.alarmHistory();
         QVERIFY(full.size() > 0);
     }
 
@@ -165,10 +180,10 @@ private slots:
     {
         auto& alarm = AlarmEngine::instance();
 
-        alarm.triggerAlarm(50, AlarmState::Low, 5.0f, 10.0f);
-        pumpEvents();
+        alarm.triggerAlarm(50, AlarmLimit::Low, 5.0f, 10.0f,
+                           AlarmPriority::Major, AlarmClassification::Process, 50);
+        pumpEvents(600);
 
-        // acknowledge via tag ID
         alarm.acknowledgeAlarmByTagId(50);
         pumpEvents();
 
@@ -185,10 +200,46 @@ private slots:
     void testSoundToggle()
     {
         auto& alarm = AlarmEngine::instance();
-
-        // should not crash
         alarm.setSoundEnabled(false);
         alarm.setSoundEnabled(true);
+    }
+
+    void testShelveAndUnshelve()
+    {
+        auto& alarm = AlarmEngine::instance();
+
+        alarm.triggerAlarm(60, AlarmLimit::High, 85.0f, 80.0f,
+                           AlarmPriority::Major, AlarmClassification::Process, 50);
+        pumpEvents(600);
+        QVERIFY(alarm.activeAlarmCount() > 0);
+
+        // Shelve with 1-hour duration
+        alarm.shelveAlarm(60, "Known issue, awaiting parts", 3600);
+        pumpEvents();
+
+        auto shelved = alarm.shelvedAlarms();
+        bool found = false;
+        for (const auto& s : shelved) {
+            if (s.tagId == 60) { found = true; break; }
+        }
+        QVERIFY(found);
+
+        // Unshelve
+        alarm.unshelveAlarm(60);
+        pumpEvents();
+        shelved = alarm.shelvedAlarms();
+        found = false;
+        for (const auto& s : shelved) {
+            if (s.tagId == 60) { found = true; break; }
+        }
+        QVERIFY(!found);
+    }
+
+    void cleanupTestCase()
+    {
+        // Clean up any remaining alarms
+        AlarmEngine::instance().acknowledgeAll();
+        AlarmEngine::instance().acknowledgeAllReturnToNormal();
     }
 };
 

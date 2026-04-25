@@ -33,7 +33,7 @@ public:
 		float currentValue = 0.0f;
 		float setPoint = 0.0f;
 		float outputValue = 0.0f;
-		AlarmState alarmstate = AlarmState::Normal;
+		AlarmLimit alarmstate = AlarmLimit::Normal;
 		DataQuality quality= DataQuality::Good;
 		qint64 timestamp = 0;
 	};

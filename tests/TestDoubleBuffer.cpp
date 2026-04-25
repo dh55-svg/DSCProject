@@ -24,7 +24,7 @@ private slots:
         snap.setPoint = 40.0f;
         snap.outputValue = 50.0f;
         snap.quality = DataQuality::Good;
-        snap.alarmstate = AlarmState::Normal;
+        snap.alarmstate = AlarmLimit::Normal;
         snap.timestamp = 1000;
 
         buf.write(1, snap);
@@ -107,7 +107,7 @@ private slots:
         snap.setPoint = 5.0f;
         snap.outputValue = 80.0f;
         snap.quality = DataQuality::Bad;
-        snap.alarmstate = AlarmState::HighHigh;
+        snap.alarmstate = AlarmLimit::HighHigh;
         snap.timestamp = 9999;
 
         buf.write(42, snap);
@@ -119,7 +119,7 @@ private slots:
         QCOMPARE(r.setPoint, 5.0f);
         QCOMPARE(r.outputValue, 80.0f);
         QCOMPARE(r.quality, DataQuality::Bad);
-        QCOMPARE(r.alarmstate, AlarmState::HighHigh);
+        QCOMPARE(r.alarmstate, AlarmLimit::HighHigh);
         QCOMPARE(r.timestamp, 9999);
     }
 

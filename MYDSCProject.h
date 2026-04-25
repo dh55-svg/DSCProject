@@ -60,7 +60,7 @@ private slots:
 
     // 数据更新
     void onDataUpdated();
-    void onAlarmTriggered(quint32 tagId, AlarmState state, float value, float limit);
+    void onAlarmTriggered(quint32 tagId, AlarmLimit state, float value, float limit);
     void onAlarmCleared(quint32 tagId);
     void onAlarmCountChanged(int count);
 

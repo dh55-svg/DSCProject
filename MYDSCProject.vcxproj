@@ -109,6 +109,8 @@
     <QtMoc Include="TankItem.h" />
     <QtMoc Include="ValveItem.h" />
     <QtMoc Include="AlarmEngine.h" />
+    <QtMoc Include="AlarmKpiMonitor.h" />
+    <QtMoc Include="AlarmChangeLog.h" />
     <QtMoc Include="AuthManager.h" />
     <QtMoc Include="BaseGraphicsItem.h" />
     <ClInclude Include="comm_global.h" />
@@ -143,6 +145,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AlarmEngine.cpp" />
+    <ClCompile Include="AlarmKpiMonitor.cpp" />
+    <ClCompile Include="AlarmChangeLog.cpp" />
     <ClCompile Include="AuthManager.cpp" />
     <ClCompile Include="BaseGraphicsItem.cpp" />
     <ClCompile Include="ConfigManager.cpp" />

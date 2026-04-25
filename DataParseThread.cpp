@@ -1,5 +1,6 @@
 ﻿#include "DataParseThread.h"
 #include "logger.h"
+#include "AlarmEngine.h"
 DataParseThread::DataParseThread(QObject* parent):QThread(parent)
 {
 	m_running.storeRelaxed(0);
@@ -120,7 +121,7 @@ void DataParseThread::processBatch(const std::vector<RawModbusData>& batch)
 				snapshot.currentValue = pv;
 				snapshot.setPoint = tag.setPoint;
 				snapshot.outputValue = tag.outputValue;
-				snapshot.alarmstate = tag.alarmState;
+				snapshot.alarmstate = tag.alarmLimit;
 				snapshot.quality = DataQuality::Good;
 				snapshot.timestamp = raw.timestamp;
 				m_doubleBuffer->write(tag.tagId,snapshot);
@@ -156,138 +157,67 @@ void DataParseThread::checkAlarm(quint32 tagId, float value)
 		}
 	}
 	if (tag.tagId == 0) return;
-	AlarmState newState = AlarmState::Normal;
-
-	if (value >= tag.highHighLimit) {
-		newState = AlarmState::HighHigh;
-	}
-
-	else if (value >= tag.highLimit) {
-		newState = AlarmState::High;
-	}
-
-	else if (value <= tag.lowLowLimit) {
-		newState = AlarmState::LowLow;
-	}
-
-	else if (value <= tag.lowLimit) {
-		newState = AlarmState::Low;
-	}
-	AlarmState oldstate = tag.alarmState;
-
-
-
-	if (oldstate != AlarmState::Normal && newState == AlarmState::Normal)
-	{
-		bool canClear = false;
-		if (oldstate == AlarmState::High || oldstate == AlarmState::HighHigh) {
-			canClear = (value<tag.highLimit-tag.deadband);
-		}
-		else if (oldstate == AlarmState::Low || oldstate == AlarmState::LowLow) {
-			canClear = (value > tag.lowLimit + tag.deadband);
-		}
-		if (!canClear) {
-
-			m_inDeadband[tagId] = true;
-			return;
-		}
-		m_inDeadband.remove(tagId);
-	}
-
-	if (newState != oldstate) {
-		m_totalAlarms.fetchAndAddRelease(1);
-
-		if (m_doubleBuffer) {
-			DoubleBuffer::TagSnapshot snapshot = m_doubleBuffer->readTag(tagId);
-			snapshot.alarmstate = newState;
-			m_doubleBuffer->write(tagId,snapshot);
-		}
-		if (newState != AlarmState::Normal)
-		{
-			float limit = 0.0f;
-			switch (newState) {
-			case AlarmState::HighHigh:limit = tag.highHighLimit; break;
-			case AlarmState::High: limit = tag.highLimit; break;
-			case AlarmState::LowLow: limit = tag.lowLowLimit; break;
-			case AlarmState::Low: limit = tag.lowLimit; break;
-			default: break;
-			}
-			emit alarmTriggered(tagId,newState,value,limit);
-		}
-		else {
-			emit alarmCleared(tagId);
-		}
-	}
+	checkAlarmOptimized(tag, value);
 }
 
 void DataParseThread::checkAlarmOptimized(const TagInfo& tag, float value)
 {
-
-
 	quint32 tagId = tag.tagId;
-	AlarmState newState = AlarmState::Normal;
+	AlarmLimit newLimit = AlarmLimit::Normal;
 
 	if (value >= tag.highHighLimit) {
-		newState = AlarmState::HighHigh;
+		newLimit = AlarmLimit::HighHigh;
+	} else if (value >= tag.highLimit) {
+		newLimit = AlarmLimit::High;
+	} else if (value <= tag.lowLowLimit) {
+		newLimit = AlarmLimit::LowLow;
+	} else if (value <= tag.lowLimit) {
+		newLimit = AlarmLimit::Low;
 	}
 
-	else if (value >= tag.highLimit) {
-		newState = AlarmState::High;
-	}
+	AlarmLimit oldLimit = tag.alarmLimit;
 
-	else if (value <= tag.lowLowLimit) {
-		newState = AlarmState::LowLow;
-	}
-
-	else if (value <= tag.lowLimit) {
-		newState = AlarmState::Low;
-	}
-
-	AlarmState oldState = tag.alarmState;
-
-
-
-	if (oldState != AlarmState::Normal && newState == AlarmState::Normal) {
+	// 死区滞环：值必须越过死区才认为恢复正常
+	if (oldLimit != AlarmLimit::Normal && newLimit == AlarmLimit::Normal) {
 		bool canClear = false;
-		if (oldState == AlarmState::High || oldState == AlarmState::HighHigh) {
+		if (oldLimit == AlarmLimit::High || oldLimit == AlarmLimit::HighHigh) {
 			canClear = (value < tag.highLimit - tag.deadband);
-		}
-		else if (oldState == AlarmState::Low || oldState == AlarmState::LowLow) {
+		} else if (oldLimit == AlarmLimit::Low || oldLimit == AlarmLimit::LowLow) {
 			canClear = (value > tag.lowLimit + tag.deadband);
 		}
-
 		if (!canClear) {
-
 			m_inDeadband[tagId] = true;
 			return;
 		}
-
 		m_inDeadband.remove(tagId);
 	}
 
-
-	if (newState != oldState) {
+	if (newLimit != oldLimit) {
 		m_totalAlarms.fetchAndAddRelease(1);
 
-
+		// 更新双缓冲区报警状态 (用于UI显示)
 		if (m_doubleBuffer) {
 			DoubleBuffer::TagSnapshot snapshot = m_doubleBuffer->readTag(tagId);
-			snapshot.alarmstate = newState;
+			snapshot.alarmstate = newLimit;
 			m_doubleBuffer->write(tagId, snapshot);
 		}
 
-		if (newState != AlarmState::Normal) {
-			float limit = 0.0f;
-			switch (newState) {
-			case AlarmState::HighHigh: limit = tag.highHighLimit; break;
-			case AlarmState::High: limit = tag.highLimit; break;
-			case AlarmState::LowLow: limit = tag.lowLowLimit; break;
-			case AlarmState::Low: limit = tag.lowLimit; break;
+		// 通过ISA-18.2 报警引擎处理完整状态机
+		if (newLimit != AlarmLimit::Normal) {
+			float threshold = 0.0f;
+			switch (newLimit) {
+			case AlarmLimit::HighHigh: threshold = tag.highHighLimit; break;
+			case AlarmLimit::High:     threshold = tag.highLimit; break;
+			case AlarmLimit::LowLow:   threshold = tag.lowLowLimit; break;
+			case AlarmLimit::Low:      threshold = tag.lowLimit; break;
 			default: break;
 			}
-			emit alarmTriggered(tagId, newState, value, limit);
-		}
-		else {
+			AlarmEngine::instance().triggerAlarm(
+			    tagId, newLimit, value, threshold,
+			    tag.priority, tag.classification, tag.onDelayMs);
+			emit alarmTriggered(tagId, newLimit, value, threshold);
+		} else {
+			AlarmEngine::instance().clearAlarm(tagId, value);
 			emit alarmCleared(tagId);
 		}
 	}

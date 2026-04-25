@@ -63,7 +63,7 @@ void DataLabelItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* opt
     painter->setFont(font);
 
     // Draw alarm border if enabled and active
-    if (m_showAlarm && m_alarmState != AlarmState::Normal) {
+    if (m_showAlarm && m_alarmState != AlarmLimit::Normal) {
         painter->setPen(QPen(alarmColor(), 2));
         painter->setBrush(Qt::NoBrush);
         QRectF r = boundingRect();
@@ -87,7 +87,7 @@ void DataLabelItem::updateAppearance()
     }
 
     // Alarm color
-    if (m_showAlarm && m_alarmState != AlarmState::Normal) {
+    if (m_showAlarm && m_alarmState != AlarmLimit::Normal) {
         m_textColor = alarmColor();
     }
 

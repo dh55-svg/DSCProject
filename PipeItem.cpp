@@ -127,7 +127,7 @@ void PipeItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
 
 void PipeItem::updateAppearance() {
 
-    if (m_alarmState != AlarmState::Normal) {
+    if (m_alarmState != AlarmLimit::Normal) {
         m_fluidColor = alarmColor();
     }
     else {

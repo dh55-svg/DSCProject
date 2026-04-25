@@ -71,7 +71,7 @@ void PumpItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
 	painter->setPen(Qt::NoPen);
 	painter->drawEllipse(QPointF(m_size * 0.5, m_size * 0.5), 4, 4);
 
-	if (m_alarmState == AlarmState::HighHigh || m_alarmState == AlarmState::LowLow)
+	if (m_alarmState == AlarmLimit::HighHigh || m_alarmState == AlarmLimit::LowLow)
 	{
 		QTime now = QTime::currentTime();
 		if (now.msec() < 500) {
@@ -97,7 +97,7 @@ void PumpItem::updateAppearance()
 	m_running = (m_tagValue>0.5f);
 
 
-	if (m_alarmState != AlarmState::Normal) {
+	if (m_alarmState != AlarmLimit::Normal) {
 		m_bodyColor = alarmColor();
 	}
 	else if (m_running) {

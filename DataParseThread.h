@@ -114,7 +114,7 @@ signals:
 	/**
 	 * @brief 报警触发信号
 	 */
-	void alarmTriggered(quint32 tagId, AlarmState state, float value, float limit);
+		void alarmTriggered(quint32 tagId, AlarmLimit state, float value, float limit);
 
 	/**
 	 * @brief 报警恢复信号

@@ -131,7 +131,7 @@ void TankItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
     }
 
     // 5. 报警高亮边框
-    if (m_alarmState != AlarmState::Normal) {
+    if (m_alarmState != AlarmLimit::Normal) {
         QPen alarmPen(alarmColor(), 3);
         painter->setPen(alarmPen);
         painter->setBrush(Qt::NoBrush);
@@ -154,10 +154,10 @@ void TankItem::updateAppearance() {
     }
 
     // 根据报警状态改变液体颜色
-    if (m_alarmState == AlarmState::HighHigh || m_alarmState == AlarmState::High) {
+    if (m_alarmState == AlarmLimit::HighHigh || m_alarmState == AlarmLimit::High) {
         m_liquidColor = QColor(255, 80, 80, 180);   // 红色
     }
-    else if (m_alarmState == AlarmState::LowLow || m_alarmState == AlarmState::Low) {
+    else if (m_alarmState == AlarmLimit::LowLow || m_alarmState == AlarmLimit::Low) {
         m_liquidColor = QColor(255, 165, 0, 180);   // 橙色
     }
     else {

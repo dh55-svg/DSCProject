@@ -76,13 +76,13 @@ void BaseGraphicsItem::onTagValueChanged(quint32 tagId, float newValue)
 QColor BaseGraphicsItem::alarmColor() const
 {
 	switch (m_alarmState) {
-	case AlarmState::HighHigh:
-	case AlarmState::LowLow:
+	case AlarmLimit::HighHigh:
+	case AlarmLimit::LowLow:
 		return QColor(255, 0, 0);       // 红色 - 紧急报警
-	case AlarmState::High:
-	case AlarmState::Low:
+	case AlarmLimit::High:
+	case AlarmLimit::Low:
 		return QColor(255, 165, 0);     // 橙色 - 预警
-	case AlarmState::Normal:
+	case AlarmLimit::Normal:
 	default:
 		return QColor(0, 200, 0);       // 绿色 - 正常
 	}

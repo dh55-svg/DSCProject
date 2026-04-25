@@ -53,7 +53,7 @@ protected:
 	virtual void updateAppearance() = 0;
 	// 获取绑定位号的当前值
 	float tagValue() const { return m_tagValue; }
-	AlarmState tagAlarmState() const { return m_alarmState; }
+	AlarmLimit tagAlarmState() const { return m_alarmState; }
 	DataQuality tagQuality() const { return m_quality; }
 
     // 根据报警状态返回对应颜色
@@ -68,7 +68,7 @@ protected:
     QString m_tagName;              // 绑定的位号名
     quint32 m_tagId = 0;            // 绑定的位号ID
     float m_tagValue = 0.0f;        // 当前绑定位号的值
-    AlarmState m_alarmState = AlarmState::Normal; // 报警状态
+    AlarmLimit m_alarmState = AlarmLimit::Normal; // 报警状态
     DataQuality m_quality = DataQuality::Good;    // 数据质量码
 
 };

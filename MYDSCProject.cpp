@@ -433,11 +433,11 @@ void MYDSCProject::updateAlarmBar()
             }
             QString severityStr;
             QString color;
-            switch (alarm.severity) {
-            case AlarmState::HighHigh: severityStr = "HH"; color = "#ff0000"; break;
-            case AlarmState::High:     severityStr = "H";  color = "#ff6600"; break;
-            case AlarmState::LowLow:   severityStr = "LL"; color = "#ff0000"; break;
-            case AlarmState::Low:      severityStr = "L";  color = "#ff6600"; break;
+            switch (alarm.limit) {
+            case AlarmLimit::HighHigh: severityStr = "HH"; color = "#ff0000"; break;
+            case AlarmLimit::High:     severityStr = "H";  color = "#ff6600"; break;
+            case AlarmLimit::LowLow:   severityStr = "LL"; color = "#ff0000"; break;
+            case AlarmLimit::Low:      severityStr = "L";  color = "#ff6600"; break;
             default:                   severityStr = "?";  color = "#ffffff"; break;
             }
             text += QStringLiteral("<span style='color:%1; font-weight:bold;'> [%2] %3 %4</span>")
@@ -593,7 +593,7 @@ void MYDSCProject::onDataUpdated()
     }
 }
 
-void MYDSCProject::onAlarmTriggered(quint32 tagId, AlarmState state, float value, float limit)
+void MYDSCProject::onAlarmTriggered(quint32 tagId, AlarmLimit state, float value, float limit)
 {
     m_totalAlarms = AlarmEngine::instance().activeAlarmCount();
 
@@ -601,14 +601,14 @@ void MYDSCProject::onAlarmTriggered(quint32 tagId, AlarmState state, float value
     m_alarmTable->insertRow(0);
     QString severityStr;
     switch (state) {
-    case AlarmState::HighHigh: severityStr = "HH"; break;
-    case AlarmState::High:     severityStr = "H";  break;
-    case AlarmState::LowLow:   severityStr = "LL"; break;
-    case AlarmState::Low:      severityStr = "L";  break;
+    case AlarmLimit::HighHigh: severityStr = "HH"; break;
+    case AlarmLimit::High:     severityStr = "H";  break;
+    case AlarmLimit::LowLow:   severityStr = "LL"; break;
+    case AlarmLimit::Low:      severityStr = "L";  break;
     default:                   severityStr = "?";  break;
     }
 
-    QColor bgColor = (state == AlarmState::HighHigh || state == AlarmState::LowLow)
+    QColor bgColor = (state == AlarmLimit::HighHigh || state == AlarmLimit::LowLow)
         ? QColor(255, 200, 200) : QColor(255, 230, 200);
 
     // 查询位号名称
@@ -1035,10 +1035,10 @@ void MYDSCProject::onExportData()
                     case DataQuality::Bad: qualityStr = "失效"; break;
                     }
                     switch (it->second.alarmstate) {
-                    case AlarmState::HighHigh: alarmStr = "HH"; break;
-                    case AlarmState::High: alarmStr = "H"; break;
-                    case AlarmState::Low: alarmStr = "L"; break;
-                    case AlarmState::LowLow: alarmStr = "LL"; break;
+                    case AlarmLimit::HighHigh: alarmStr = "HH"; break;
+                    case AlarmLimit::High: alarmStr = "H"; break;
+                    case AlarmLimit::Low: alarmStr = "L"; break;
+                    case AlarmLimit::LowLow: alarmStr = "LL"; break;
                     default: alarmStr = "正常"; break;
                     }
                 }
@@ -1053,15 +1053,15 @@ void MYDSCProject::onExportData()
         }
     } else if (choice == options[1]) {
         // 导出报警历史
-        out << "报警ID,位号,级别,描述,触发值,限值,触发时间,确认时间,清除时间,已确认\n";
-        auto alarms = AlarmEngine::instance().allAlarms();
+        out << "报警ID,位号,级别,描述,触发值,限值,触发时间,确认时间,恢复时间,已确认\n";
+        auto alarms = AlarmEngine::instance().alarmHistory();
         for (const auto& a : alarms) {
             QString sevStr;
-            switch (a.severity) {
-            case AlarmState::HighHigh: sevStr = "HH"; break;
-            case AlarmState::High: sevStr = "H"; break;
-            case AlarmState::Low: sevStr = "L"; break;
-            case AlarmState::LowLow: sevStr = "LL"; break;
+            switch (a.limit) {
+            case AlarmLimit::HighHigh: sevStr = "HH"; break;
+            case AlarmLimit::High: sevStr = "H"; break;
+            case AlarmLimit::Low: sevStr = "L"; break;
+            case AlarmLimit::LowLow: sevStr = "LL"; break;
             default: sevStr = "Normal"; break;
             }
             out << a.alarmId << ","
@@ -1072,7 +1072,7 @@ void MYDSCProject::onExportData()
                 << a.thresholdValue << ","
                 << QDateTime::fromMSecsSinceEpoch(a.triggerTime).toString("yyyy-MM-dd HH:mm:ss") << ","
                 << (a.acknowledgeTime > 0 ? QDateTime::fromMSecsSinceEpoch(a.acknowledgeTime).toString("yyyy-MM-dd HH:mm:ss") : "") << ","
-                << (a.clearTime > 0 ? QDateTime::fromMSecsSinceEpoch(a.clearTime).toString("yyyy-MM-dd HH:mm:ss") : "") << ","
+                << (a.returnAckTime > 0 ? QDateTime::fromMSecsSinceEpoch(a.returnAckTime).toString("yyyy-MM-dd HH:mm:ss") : "") << ","
                 << (a.acknowledged ? "是" : "否") << "\n";
         }
     } else if (choice == options[2]) {
@@ -1132,11 +1132,11 @@ void MYDSCProject::onGenerateReport()
         for (const auto& a : alarms) {
             QString sevClass;
             QString sevStr;
-            switch (a.severity) {
-            case AlarmState::HighHigh: sevClass = "alarm-HH"; sevStr = "HH"; break;
-            case AlarmState::High: sevClass = "alarm-H"; sevStr = "H"; break;
-            case AlarmState::LowLow: sevClass = "alarm-HH"; sevStr = "LL"; break;
-            case AlarmState::Low: sevClass = "alarm-H"; sevStr = "L"; break;
+            switch (a.limit) {
+            case AlarmLimit::HighHigh: sevClass = "alarm-HH"; sevStr = "HH"; break;
+            case AlarmLimit::High: sevClass = "alarm-H"; sevStr = "H"; break;
+            case AlarmLimit::LowLow: sevClass = "alarm-HH"; sevStr = "LL"; break;
+            case AlarmLimit::Low: sevClass = "alarm-H"; sevStr = "L"; break;
             default: sevStr = "-"; break;
             }
             html += QString("<tr><td>%1</td><td class='%2'>%3</td><td>%4</td><td>%5</td><td>%6</td><td>%7</td></tr>")
@@ -1384,10 +1384,10 @@ void MYDSCProject::updateDataTable()
         QString alarmStr;
         QString alarmBg;
         switch (tag.alarmstate) {
-        case AlarmState::HighHigh: alarmStr = "HH"; alarmBg = "#ff6464"; break;
-        case AlarmState::High:     alarmStr = "H";  alarmBg = "#ffb464"; break;
-        case AlarmState::LowLow:   alarmStr = "LL"; alarmBg = "#ff6464"; break;
-        case AlarmState::Low:      alarmStr = "L";  alarmBg = "#ffb464"; break;
+        case AlarmLimit::HighHigh: alarmStr = "HH"; alarmBg = "#ff6464"; break;
+        case AlarmLimit::High:     alarmStr = "H";  alarmBg = "#ffb464"; break;
+        case AlarmLimit::LowLow:   alarmStr = "LL"; alarmBg = "#ff6464"; break;
+        case AlarmLimit::Low:      alarmStr = "L";  alarmBg = "#ffb464"; break;
         default:                   alarmStr = QStringLiteral("正常"); alarmBg = "#c8ffc8"; break;
         }
         m_dataTable->item(row, 6)->setText(alarmStr);
@@ -1496,7 +1496,7 @@ void MYDSCProject::loadDemoData()
         if (tags.isEmpty()) return;
 
         // 跟踪报警状态变化，避免重复触发
-        static QHash<quint32, AlarmState> prevAlarmStates;
+        static QHash<quint32, AlarmLimit> prevAlarmStates;
 
         for (const auto& tagInfo : tags) {
             // 只给AI类型生成模拟值
@@ -1509,19 +1509,19 @@ void MYDSCProject::loadDemoData()
             float value = static_cast<float>(mid + amp * sin(counter * 0.05 + phase));
 
             // 报警判断
-            AlarmState newState = AlarmState::Normal;
+            AlarmLimit newLimit = AlarmLimit::Normal;
             float threshold = 0;
             if (value >= tagInfo.highHighLimit) {
-                newState = AlarmState::HighHigh;
+                newLimit = AlarmLimit::HighHigh;
                 threshold = tagInfo.highHighLimit;
             } else if (value >= tagInfo.highLimit) {
-                newState = AlarmState::High;
+                newLimit = AlarmLimit::High;
                 threshold = tagInfo.highLimit;
             } else if (value <= tagInfo.lowLowLimit) {
-                newState = AlarmState::LowLow;
+                newLimit = AlarmLimit::LowLow;
                 threshold = tagInfo.lowLowLimit;
             } else if (value <= tagInfo.lowLimit) {
-                newState = AlarmState::Low;
+                newLimit = AlarmLimit::Low;
                 threshold = tagInfo.lowLimit;
             }
 
@@ -1531,24 +1531,26 @@ void MYDSCProject::loadDemoData()
                 snap.tagId = tagInfo.tagId;
                 snap.currentValue = value;
                 snap.quality = DataQuality::Good;
-                snap.alarmstate = newState;
+                snap.alarmstate = newLimit;
                 snap.timestamp = QDateTime::currentMSecsSinceEpoch();
                 m_dataEngine->doubleBuffer()->write(tagInfo.tagId, snap);
             }
 
             // 仅在状态切换时触发报警引擎
             auto prevIt = prevAlarmStates.find(tagInfo.tagId);
-            AlarmState prevState = (prevIt != prevAlarmStates.end()) ? prevIt.value() : AlarmState::Normal;
+            AlarmLimit prevLimit = (prevIt != prevAlarmStates.end()) ? prevIt.value() : AlarmLimit::Normal;
 
-            if (newState != prevState) {
-                if (newState != AlarmState::Normal) {
-                    AlarmEngine::instance().triggerAlarm(tagInfo.tagId, newState, value, threshold);
-                    onAlarmTriggered(tagInfo.tagId, newState, value, threshold);
+            if (newLimit != prevLimit) {
+                if (newLimit != AlarmLimit::Normal) {
+                    AlarmEngine::instance().triggerAlarm(
+                        tagInfo.tagId, newLimit, value, threshold,
+                        tagInfo.priority, tagInfo.classification, tagInfo.onDelayMs);
+                    onAlarmTriggered(tagInfo.tagId, newLimit, value, threshold);
                 } else {
-                    AlarmEngine::instance().clearAlarm(tagInfo.tagId);
+                    AlarmEngine::instance().clearAlarm(tagInfo.tagId, value);
                     onAlarmCleared(tagInfo.tagId);
                 }
-                prevAlarmStates[tagInfo.tagId] = newState;
+                prevAlarmStates[tagInfo.tagId] = newLimit;
             }
         }
 
