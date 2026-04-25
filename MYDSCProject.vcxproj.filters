@@ -1,0 +1,247 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>qrc;rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Translation Files">
+      <UniqueIdentifier>{639EADAA-A684-42e4-A9AD-28FC9BCB8F7C}</UniqueIdentifier>
+      <Extensions>ts</Extensions>
+    </Filter>
+    <Filter Include="core">
+      <UniqueIdentifier>{868ac3da-c16b-42fe-bcce-c8672f04a300}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="comm">
+      <UniqueIdentifier>{2eb7234d-e779-4d64-b16e-45ebf7d500b1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="app">
+      <UniqueIdentifier>{367cc8f7-3db4-4f2d-b6d2-2802c897f1c6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="business">
+      <UniqueIdentifier>{5852ba26-3c6d-4f96-a86c-1a8b1f23deae}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dataengine">
+      <UniqueIdentifier>{e720bb5d-ee25-4fa2-88b8-1e71573c5f12}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="graphics">
+      <UniqueIdentifier>{5a1cac1d-528a-434f-9e5d-76200d1467c7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ui">
+      <UniqueIdentifier>{887ee57a-5fd7-42fc-b4e1-6b0721e7aaa9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\config">
+      <UniqueIdentifier>{a47bd973-2c3c-43bf-ac59-6a4b56b8ee92}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\database">
+      <UniqueIdentifier>{dd545f77-7274-4a76-9924-87d331b0e372}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\logger">
+      <UniqueIdentifier>{91248533-fef6-4245-b213-cf99a5b3b484}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\threadpool">
+      <UniqueIdentifier>{2f30efb5-dc78-4b70-9eef-65f29241bbc9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core\utils">
+      <UniqueIdentifier>{9a1caf11-b870-45d8-89e4-f5c6a3437224}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="comm\modbus">
+      <UniqueIdentifier>{a5611cc7-2e38-47eb-bdf4-0856952a90f1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="common">
+      <UniqueIdentifier>{99fe9650-7273-42b0-b9d3-4f129672c9c3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="business\alarm">
+      <UniqueIdentifier>{028878a2-e6c6-42ca-b5e8-89c37a137093}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="business\auth">
+      <UniqueIdentifier>{de1e3674-6de8-4e44-b208-8865e99dd2f9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="business\history">
+      <UniqueIdentifier>{0a3316dd-6dda-4b57-93c7-7ff0a2f5ee8e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="graphics\item">
+      <UniqueIdentifier>{ebe845e0-5aaa-4466-a21c-7e5cd0a0600c}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <QtRcc Include="MYDSCProject.qrc">
+      <Filter>Resource Files</Filter>
+    </QtRcc>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="core_global.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="logger.h">
+      <Filter>core\logger</Filter>
+    </ClInclude>
+    <ClInclude Include="DoubleBuffer.h">
+      <Filter>core\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="lockFreeRingBuffer.h">
+      <Filter>core\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="comm_global.h">
+      <Filter>comm</Filter>
+    </ClInclude>
+    <ClInclude Include="LogLevelSpec.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="SystemHealthMonitor.h">
+      <Filter>core\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="TagDef.h">
+      <Filter>dataengine</Filter>
+    </ClInclude>
+    <ClInclude Include="export.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="PidView.h">
+      <Filter>graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\3pair\qcustomplot\qcustomplot.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="logger.cpp">
+      <Filter>core\logger</Filter>
+    </ClCompile>
+    <ClCompile Include="ConfigManager.cpp">
+      <Filter>core\config</Filter>
+    </ClCompile>
+    <ClCompile Include="ModbusComm.cpp">
+      <Filter>comm\modbus</Filter>
+    </ClCompile>
+    <ClCompile Include="ModbusManager.cpp">
+      <Filter>comm</Filter>
+    </ClCompile>
+    <ClCompile Include="DataBackupManager.cpp">
+      <Filter>core\utils</Filter>
+    </ClCompile>
+    <ClCompile Include="PerformanceMonitor.cpp">
+      <Filter>core\utils</Filter>
+    </ClCompile>
+    <ClCompile Include="SystemHealthMonitor.cpp">
+      <Filter>core\utils</Filter>
+    </ClCompile>
+    <ClCompile Include="DatabaseManager.cpp">
+      <Filter>core\database</Filter>
+    </ClCompile>
+    <ClCompile Include="DataParseThread.cpp">
+      <Filter>dataengine</Filter>
+    </ClCompile>
+    <ClCompile Include="RealtimeDb.cpp">
+      <Filter>dataengine</Filter>
+    </ClCompile>
+    <ClCompile Include="TagConfigMgr.cpp">
+      <Filter>dataengine</Filter>
+    </ClCompile>
+    <ClCompile Include="DataEngine.cpp">
+      <Filter>dataengine</Filter>
+    </ClCompile>
+    <ClCompile Include="AlarmEngine.cpp">
+      <Filter>business\alarm</Filter>
+    </ClCompile>
+    <ClCompile Include="AuthManager.cpp">
+      <Filter>business\auth</Filter>
+    </ClCompile>
+    <ClCompile Include="HistoryArchiveThread.cpp">
+      <Filter>business\history</Filter>
+    </ClCompile>
+    <ClCompile Include="PidScene.cpp">
+      <Filter>graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="PidView.cpp">
+      <Filter>graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="BaseGraphicsItem.cpp">
+      <Filter>graphics\item</Filter>
+    </ClCompile>
+    <ClCompile Include="PumpItem.cpp">
+      <Filter>graphics\item</Filter>
+    </ClCompile>
+    <ClCompile Include="TankItem.cpp">
+      <Filter>graphics\item</Filter>
+    </ClCompile>
+    <ClCompile Include="ValveItem.cpp">
+      <Filter>graphics\item</Filter>
+    </ClCompile>
+    <ClCompile Include="PipeItem.cpp">
+      <Filter>graphics\item</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp">
+      <Filter>app</Filter>
+    </ClCompile>
+    <ClCompile Include="MYDSCProject.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\3pair\qcustomplot\qcustomplot.cpp" />
+    <ClCompile Include="TrendWidget.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="ModbusComm.h">
+      <Filter>comm\modbus</Filter>
+    </QtMoc>
+    <QtMoc Include="ModbusManager.h">
+      <Filter>comm</Filter>
+    </QtMoc>
+    <QtMoc Include="DataBackupManager.h">
+      <Filter>core\utils</Filter>
+    </QtMoc>
+    <QtMoc Include="PerformanceMonitor.h">
+      <Filter>core\utils</Filter>
+    </QtMoc>
+    <QtMoc Include="DataParseThread.h">
+      <Filter>dataengine</Filter>
+    </QtMoc>
+    <QtMoc Include="TagConfigMgr.h">
+      <Filter>dataengine</Filter>
+    </QtMoc>
+    <QtMoc Include="RealtimeDb.h">
+      <Filter>dataengine</Filter>
+    </QtMoc>
+    <QtMoc Include="DatabaseManager.h">
+      <Filter>core\database</Filter>
+    </QtMoc>
+    <QtMoc Include="DataEngine.h">
+      <Filter>dataengine</Filter>
+    </QtMoc>
+    <QtMoc Include="AlarmEngine.h">
+      <Filter>business\alarm</Filter>
+    </QtMoc>
+    <QtMoc Include="AuthManager.h">
+      <Filter>business\auth</Filter>
+    </QtMoc>
+    <QtMoc Include="HistoryArchiveThread.h">
+      <Filter>business\history</Filter>
+    </QtMoc>
+    <QtMoc Include="BaseGraphicsItem.h">
+      <Filter>graphics\item</Filter>
+    </QtMoc>
+    <QtMoc Include="PumpItem.h">
+      <Filter>graphics\item</Filter>
+    </QtMoc>
+    <QtMoc Include="PipeItem.h">
+      <Filter>graphics\item</Filter>
+    </QtMoc>
+    <QtMoc Include="TankItem.h">
+      <Filter>graphics\item</Filter>
+    </QtMoc>
+    <QtMoc Include="ValveItem.h">
+      <Filter>graphics\item</Filter>
+    </QtMoc>
+    <QtMoc Include="PidScene.h">
+      <Filter>graphics</Filter>
+    </QtMoc>
+    <QtMoc Include="MYDSCProject.h">
+      <Filter>ui</Filter>
+    </QtMoc>
+    <QtMoc Include="ConfigManager.h" />
+    <QtMoc Include="TrendWidget.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtUic Include="MYDSCProject.ui">
+      <Filter>ui</Filter>
+    </QtUic>
+  </ItemGroup>
+</Project>

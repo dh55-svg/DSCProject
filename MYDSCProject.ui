@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<UI version="4.0">
+ <class>MYDSCProjectClass</class>
+ <widget class="QMainWindow" name="MYDSCProjectClass">
+  <property name="objectName">
+   <string notr="true">MYDSCProjectClass</string>
+  </property>
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1400</width>
+    <height>900</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>MY DCS - 分布式控制系统</string>
+  </property>
+  <widget class="QMenuBar" name="menuBar" />
+  <widget class="QToolBar" name="mainToolBar" />
+  <widget class="QWidget" name="centralWidget" />
+  <widget class="QStatusBar" name="statusBar" />
+ </widget>
+ <layoutDefault spacing="6" margin="11" />
+ <pixmapfunction></pixmapfunction>
+ <resources>
+  <include location="MYDSCProject.qrc"/>
+ </resources>
+ <connections/>
+</UI>

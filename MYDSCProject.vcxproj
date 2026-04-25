@@ -1,0 +1,196 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{5EFAF1AA-1F97-4135-AE47-A952F3B31DD6}</ProjectGuid>
+    <Keyword>QtVS_v304</Keyword>
+    <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">10.0</WindowsTargetPlatformVersion>
+    <QtMsBuild Condition="'$(QtMsBuild)'=='' OR !Exists('$(QtMsBuild)\qt.targets')">$(MSBuildProjectDirectory)\QtMsBuild</QtMsBuild>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v142</PlatformToolset>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v142</PlatformToolset>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt_defaults.props')">
+    <Import Project="$(QtMsBuild)\qt_defaults.props" />
+  </ImportGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
+    <QtInstall>msvc</QtInstall>
+    <QtModules>core;gui;network;widgets;multimedia;printsupport;serialbus;serialport;sql</QtModules>
+    <QtBuildConfig>debug</QtBuildConfig>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
+    <QtInstall>msvc</QtInstall>
+    <QtModules>core;gui;widgets</QtModules>
+    <QtBuildConfig>release</QtBuildConfig>
+  </PropertyGroup>
+  <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
+    <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
+  </Target>
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\qtrpoject\MYDSCProject\MYDSCProject\3pair\libmodbus-3.1.12\src;C:\qtrpoject\MYDSCProject\MYDSCProject\3pair\qcustomplot;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>CORE_LIBARAY;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>C:\qtrpoject\MYDSCProject\MYDSCProject\3pair\libmodbus-3.1.12\src\win32\x64\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>modbus.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ClCompile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ClCompile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <QtRcc Include="MYDSCProject.qrc" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="TankItem.h" />
+    <QtMoc Include="ValveItem.h" />
+    <QtMoc Include="AlarmEngine.h" />
+    <QtMoc Include="AuthManager.h" />
+    <QtMoc Include="BaseGraphicsItem.h" />
+    <ClInclude Include="comm_global.h" />
+    <QtMoc Include="ConfigManager.h" />
+    <ClInclude Include="core_global.h" />
+    <QtMoc Include="DatabaseManager.h" />
+    <QtMoc Include="DataEngine.h" />
+    <ClInclude Include="export.h" />
+    <QtMoc Include="RealtimeDb.h" />
+    <QtMoc Include="TagConfigMgr.h" />
+    <QtMoc Include="HistoryArchiveThread.h" />
+    <QtMoc Include="PidScene.h" />
+    <QtMoc Include="MYDSCProject.h" />
+    <ClInclude Include="PidView.h" />
+    <QtMoc Include="PipeItem.h" />
+    <QtMoc Include="PumpItem.h" />
+    <QtMoc Include="DataLabelItem.h" />
+    <ClInclude Include="TagDef.h" />
+    <QtMoc Include="PerformanceMonitor.h" />
+    <QtMoc Include="DataParseThread.h" />
+    <ClInclude Include="SystemHealthMonitor.h" />
+    <QtMoc Include="DataBackupManager.h" />
+    <ClInclude Include="DoubleBuffer.h" />
+    <ClInclude Include="lockFreeRingBuffer.h" />
+    <ClInclude Include="logger.h" />
+    <ClInclude Include="LogLevelSpec.h" />
+    <QtMoc Include="3pair\qcustomplot\qcustomplot.h" />
+    <QtMoc Include="ModbusManager.h" />
+    <QtMoc Include="ModbusComm.h" />
+    <QtMoc Include="TrendWidget.h" />
+    <QtMoc Include="TagConfigDialog.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="AlarmEngine.cpp" />
+    <ClCompile Include="AuthManager.cpp" />
+    <ClCompile Include="BaseGraphicsItem.cpp" />
+    <ClCompile Include="ConfigManager.cpp" />
+    <ClCompile Include="DataBackupManager.cpp" />
+    <ClCompile Include="DatabaseManager.cpp" />
+    <ClCompile Include="DataEngine.cpp" />
+    <ClCompile Include="HistoryArchiveThread.cpp" />
+    <ClCompile Include="logger.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="ModbusComm.cpp" />
+    <ClCompile Include="ModbusManager.cpp" />
+    <ClCompile Include="MYDSCProject.cpp" />
+    <ClCompile Include="PerformanceMonitor.cpp" />
+    <ClCompile Include="PidView.cpp" />
+    <ClCompile Include="PipeItem.cpp">
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(Filename).moc</QtMocFileName>
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Release|x64'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(Filename).moc</QtMocFileName>
+    </ClCompile>
+    <ClCompile Include="PumpItem.cpp" />
+    <ClCompile Include="DataLabelItem.cpp" />
+    <ClCompile Include="RealtimeDb.cpp" />
+    <ClCompile Include="SystemHealthMonitor.cpp" />
+    <ClCompile Include="TagConfigMgr.cpp" />
+    <ClCompile Include="DataParseThread.cpp" />
+    <ClCompile Include="PidScene.cpp" />
+    <ClCompile Include="TankItem.cpp" />
+    <ClCompile Include="ValveItem.cpp" />
+    <ClCompile Include="3pair\qcustomplot\qcustomplot.cpp" />
+    <ClCompile Include="TrendWidget.cpp" />
+    <ClCompile Include="TagConfigDialog.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtUic Include="MYDSCProject.ui" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="config\tags.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="config\scene.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
+    <Import Project="$(QtMsBuild)\qt.targets" />
+  </ImportGroup>
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

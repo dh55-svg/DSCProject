@@ -1,0 +1,98 @@
+[
+  {
+    "tagId": 101, "tagName": "TIC_101", "description": "1号反应釜温度", "unit": "℃",
+    "tagType": "AI", "engHigh": 200.0, "engLow": 0.0,
+    "highHighLimit": 180.0, "highLimit": 150.0, "lowLimit": 20.0, "lowLowLimit": 5.0, "deadband": 3.0,
+    "modbusServerAddr": 1, "modbusRegAddr": 0, "modbusRegCount": 1
+  },
+  {
+    "tagId": 102, "tagName": "PIC_101", "description": "1号反应釜压力", "unit": "MPa",
+    "tagType": "AI", "engHigh": 2.0, "engLow": 0.0,
+    "highHighLimit": 1.8, "highLimit": 1.5, "lowLimit": 0.1, "lowLowLimit": 0.05, "deadband": 0.05,
+    "modbusServerAddr": 1, "modbusRegAddr": 1, "modbusRegCount": 1
+  },
+  {
+    "tagId": 103, "tagName": "FIC_101", "description": "进料流量", "unit": "m³/h",
+    "tagType": "AI", "engHigh": 100.0, "engLow": 0.0,
+    "highHighLimit": 90.0, "highLimit": 80.0, "lowLimit": 5.0, "lowLowLimit": 2.0, "deadband": 2.0,
+    "modbusServerAddr": 1, "modbusRegAddr": 2, "modbusRegCount": 1
+  },
+  {
+    "tagId": 104, "tagName": "LT_101", "description": "1号反应釜液位", "unit": "%",
+    "tagType": "AI", "engHigh": 100.0, "engLow": 0.0,
+    "highHighLimit": 95.0, "highLimit": 85.0, "lowLimit": 15.0, "lowLowLimit": 5.0, "deadband": 2.0,
+    "modbusServerAddr": 1, "modbusRegAddr": 3, "modbusRegCount": 1
+  },
+  {
+    "tagId": 105, "tagName": "LT_102", "description": "2号储罐液位", "unit": "%",
+    "tagType": "AI", "engHigh": 100.0, "engLow": 0.0,
+    "highHighLimit": 95.0, "highLimit": 85.0, "lowLimit": 10.0, "lowLowLimit": 5.0, "deadband": 2.0,
+    "modbusServerAddr": 1, "modbusRegAddr": 4, "modbusRegCount": 1
+  },
+  {
+    "tagId": 106, "tagName": "FV_101", "description": "进料调节阀", "unit": "%",
+    "tagType": "AO", "engHigh": 100.0, "engLow": 0.0,
+    "highHighLimit": 100.0, "highLimit": 90.0, "lowLimit": 5.0, "lowLowLimit": 0.0, "deadband": 1.0,
+    "modbusServerAddr": 1, "modbusRegAddr": 5, "modbusRegCount": 1
+  },
+  {
+    "tagId": 107, "tagName": "FV_102", "description": "出料调节阀", "unit": "%",
+    "tagType": "AO", "engHigh": 100.0, "engLow": 0.0,
+    "highHighLimit": 100.0, "highLimit": 90.0, "lowLimit": 5.0, "lowLowLimit": 0.0, "deadband": 1.0,
+    "modbusServerAddr": 1, "modbusRegAddr": 6, "modbusRegCount": 1
+  },
+  {
+    "tagId": 108, "tagName": "PUMP_101", "description": "进料泵运行状态", "unit": "",
+    "tagType": "DI", "engHigh": 1.0, "engLow": 0.0,
+    "highHighLimit": 1.0, "highLimit": 1.0, "lowLimit": 0.0, "lowLowLimit": 0.0, "deadband": 0.0,
+    "modbusServerAddr": 1, "modbusRegAddr": 7, "modbusRegCount": 1
+  },
+  {
+    "tagId": 109, "tagName": "PUMP_102", "description": "循环泵运行状态", "unit": "",
+    "tagType": "DI", "engHigh": 1.0, "engLow": 0.0,
+    "highHighLimit": 1.0, "highLimit": 1.0, "lowLimit": 0.0, "lowLowLimit": 0.0, "deadband": 0.0,
+    "modbusServerAddr": 1, "modbusRegAddr": 8, "modbusRegCount": 1
+  },
+  {
+    "tagId": 110, "tagName": "XV_101", "description": "进料切断阀", "unit": "",
+    "tagType": "DO", "engHigh": 1.0, "engLow": 0.0,
+    "highHighLimit": 1.0, "highLimit": 1.0, "lowLimit": 0.0, "lowLowLimit": 0.0, "deadband": 0.0,
+    "modbusServerAddr": 1, "modbusRegAddr": 9, "modbusRegCount": 1
+  },
+  {
+    "tagId": 111, "tagName": "TI_103", "description": "冷却水出口温度", "unit": "℃",
+    "tagType": "AI", "engHigh": 100.0, "engLow": 0.0,
+    "highHighLimit": 80.0, "highLimit": 70.0, "lowLimit": 10.0, "lowLowLimit": 5.0, "deadband": 2.0,
+    "modbusServerAddr": 1, "modbusRegAddr": 10, "modbusRegCount": 1
+  },
+  {
+    "tagId": 112, "tagName": "HS_101", "description": "紧急停车按钮", "unit": "",
+    "tagType": "DI", "engHigh": 1.0, "engLow": 0.0,
+    "highHighLimit": 1.0, "highLimit": 1.0, "lowLimit": 0.0, "lowLowLimit": 0.0, "deadband": 0.0,
+    "modbusServerAddr": 1, "modbusRegAddr": 11, "modbusRegCount": 1
+  },
+  {
+    "tagId": 201, "tagName": "TIC_201", "description": "2号反应釜温度", "unit": "℃",
+    "tagType": "AI", "engHigh": 200.0, "engLow": 0.0,
+    "highHighLimit": 180.0, "highLimit": 150.0, "lowLimit": 20.0, "lowLowLimit": 5.0, "deadband": 3.0,
+    "modbusServerAddr": 2, "modbusRegAddr": 0, "modbusRegCount": 1
+  },
+  {
+    "tagId": 202, "tagName": "PIC_201", "description": "2号反应釜压力", "unit": "MPa",
+    "tagType": "AI", "engHigh": 2.0, "engLow": 0.0,
+    "highHighLimit": 1.8, "highLimit": 1.5, "lowLimit": 0.1, "lowLowLimit": 0.05, "deadband": 0.05,
+    "modbusServerAddr": 2, "modbusRegAddr": 1, "modbusRegCount": 1
+  },
+  {
+    "tagId": 203, "tagName": "FIC_201", "description": "2号进料流量", "unit": "m³/h",
+    "tagType": "AI", "engHigh": 100.0, "engLow": 0.0,
+    "highHighLimit": 90.0, "highLimit": 80.0, "lowLimit": 5.0, "lowLowLimit": 2.0, "deadband": 2.0,
+    "modbusServerAddr": 2, "modbusRegAddr": 2, "modbusRegCount": 1
+  },
+  {
+    "tagId": 204, "tagName": "LT_201", "description": "2号产品储罐液位", "unit": "%",
+    "tagType": "AI", "engHigh": 100.0, "engLow": 0.0,
+    "highHighLimit": 95.0, "highLimit": 85.0, "lowLimit": 15.0, "lowLowLimit": 5.0, "deadband": 2.0,
+    "modbusServerAddr": 2, "modbusRegAddr": 3, "modbusRegCount": 1
+  }
+]
