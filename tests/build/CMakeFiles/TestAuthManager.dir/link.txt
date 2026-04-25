@@ -1,3 +1,0 @@
-C:\Cmake\bin\cmake.exe -E rm -f CMakeFiles\TestAuthManager.dir/objects.a
-C:\Qt\Tools\mingw1120_64\bin\ar.exe qc CMakeFiles\TestAuthManager.dir/objects.a @CMakeFiles\TestAuthManager.dir\objects1.rsp
-C:\Qt\Tools\mingw1120_64\bin\c++.exe -g -Wl,--whole-archive CMakeFiles\TestAuthManager.dir/objects.a -Wl,--no-whole-archive -o TestAuthManager.exe -Wl,--out-implib,libTestAuthManager.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\TestAuthManager.dir\linkLibs.rsp

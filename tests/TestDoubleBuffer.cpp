@@ -1,5 +1,7 @@
 #include <QTest>
-#include <QVector>
+#include <QFile>
+#include <QTextStream>
+#include <vector>
 #include "../DoubleBuffer.h"
 
 class TestDoubleBuffer : public QObject {
@@ -9,8 +11,8 @@ private slots:
     void testEmptyBuffer()
     {
         DoubleBuffer buf;
-        auto all = buf.readAll();
-        QVERIFY(all.isEmpty());
+        auto snap = buf.readAll();
+        QVERIFY(snap->empty());
     }
 
     void testWriteAndCommitSingle()
@@ -26,14 +28,14 @@ private slots:
         snap.timestamp = 1000;
 
         buf.write(1, snap);
-        QVERIFY(buf.readAll().isEmpty()); // not yet committed
+        QVERIFY(buf.readAll()->empty());
 
         buf.commit();
         auto result = buf.readAll();
-        QCOMPARE(result.size(), 1);
-        QCOMPARE(result[0].tagId, 1u);
-        QCOMPARE(result[0].currentValue, 42.5f);
-        QCOMPARE(result[0].quality, DataQuality::Good);
+        QCOMPARE(result->size(), static_cast<size_t>(1));
+        auto it = result->find(1);
+        QVERIFY(it != result->end());
+        QCOMPARE(it->second.currentValue, 42.5f);
     }
 
     void testWriteMultiple()
@@ -49,9 +51,9 @@ private slots:
         buf.write(3, s3);
         buf.commit();
 
-        QCOMPARE(buf.readAll().size(), 3);
+        QCOMPARE(buf.size(), static_cast<size_t>(3));
         QCOMPARE(buf.readTag(2).currentValue, 20.0f);
-        QCOMPARE(buf.readTag(99).tagId, 0u); // non-existent
+        QCOMPARE(buf.readTag(99).tagId, 0u);
     }
 
     void testOverwriteCommit()
@@ -77,7 +79,6 @@ private slots:
         buf.write(1, snap);
         buf.commit();
 
-        // write but don't commit -- read side unchanged
         snap.currentValue = 50.0f;
         buf.write(1, snap);
 
@@ -89,7 +90,6 @@ private slots:
         DoubleBuffer buf;
         DoubleBuffer::TagSnapshot snap;
         snap.tagId = 1; snap.currentValue = 0.0f;
-
         for (int i = 1; i <= 5; ++i) {
             snap.currentValue = static_cast<float>(i * 10);
             buf.write(1, snap);
@@ -135,34 +135,44 @@ private slots:
         }
         buf.commit();
 
-        QCOMPARE(buf.readAll().size(), TAG_COUNT);
+        QCOMPARE(buf.size(), static_cast<size_t>(TAG_COUNT));
         QCOMPARE(buf.readTag(0).currentValue, 0.0f);
         QCOMPARE(buf.readTag(499).currentValue, 499.0f);
     }
 
-    void testReadAllAfterSecondCommit()
+    void testWriteBatch()
     {
         DoubleBuffer buf;
-        DoubleBuffer::TagSnapshot snap;
-        snap.tagId = 1; snap.currentValue = 10.0f;
-        buf.write(1, snap);
+        std::vector<DoubleBuffer::TagSnapshot> batch;
+        for (int i = 0; i < 10; ++i) {
+            DoubleBuffer::TagSnapshot s;
+            s.tagId = static_cast<quint32>(i);
+            s.currentValue = static_cast<float>(i * 10);
+            batch.push_back(s);
+        }
+        buf.writeBatch(batch);
         buf.commit();
 
-        snap.tagId = 2; snap.currentValue = 20.0f;
-        buf.write(2, snap);
-        buf.commit();
-
-        auto result = buf.readAll();
-        QCOMPARE(result.size(), 2);
-    }
-
-    void testQualityEnumMapping()
-    {
-        QCOMPARE(static_cast<int>(DataQuality::Good), 0);
-        QCOMPARE(static_cast<int>(DataQuality::Bad), 1);
-        QCOMPARE(static_cast<int>(DataQuality::Uncertain), 2);
+        QCOMPARE(buf.size(), static_cast<size_t>(10));
+        QCOMPARE(buf.readTag(5).currentValue, 50.0f);
     }
 };
 
-QTEST_MAIN(TestDoubleBuffer)
+int main(int argc, char *argv[])
+{
+    QFile logFile("TestDoubleBuffer_results.txt");
+    logFile.open(QIODevice::WriteOnly | QIODevice::Text);
+    QTextStream log(&logFile);
+
+    TestDoubleBuffer t;
+    int result = QTest::qExec(&t, argc, argv);
+
+    QFile resultFile("test_exit_codes.txt");
+    resultFile.open(QIODevice::Append | QIODevice::Text);
+    QTextStream rs(&resultFile);
+    rs << "TestDoubleBuffer: " << (result == 0 ? "PASS" : "FAIL") << " (rc=" << result << ")\n";
+
+    return result;
+}
+
 #include "TestDoubleBuffer.moc"

@@ -2,6 +2,7 @@
 #include "logger.h"
 #include "DatabaseManager.h"
 #include <QFile>
+#include <QMediaDevices>
 
 AlarmEngine& AlarmEngine::instance()
 {
@@ -10,30 +11,32 @@ AlarmEngine& AlarmEngine::instance()
 }
 void AlarmEngine::initialize()
 {
-	// 加载报警音效文件
-	// 工业现场不同级别报警用不同声音：
-	// - 高高报/低低报：急促的蜂鸣声
-	// - 高报/低报：平缓的提示音
-	m_alarmSoundHigh = new QSoundEffect(this);
-	m_alarmSoundLow = new QSoundEffect(this);
+	// 检查音频设备是否可用（无音频设备时跳过音效创建，防止崩溃）
+	bool audioAvailable = !QMediaDevices::audioOutputs().isEmpty();
+	if (audioAvailable) {
+		m_alarmSoundHigh = new QSoundEffect(this);
+		m_alarmSoundLow = new QSoundEffect(this);
 
-	QString highSoundPath = "./sounds/alarm_high.wav";
-	QString lowSoundPath = "./sounds/alarm_low.wav";
+		QString highSoundPath = "./sounds/alarm_high.wav";
+		QString lowSoundPath = "./sounds/alarm_low.wav";
 
-	if (QFile::exists(highSoundPath)) {
-		m_alarmSoundHigh->setSource(QUrl::fromLocalFile(highSoundPath));
-		m_alarmSoundHigh->setVolume(0.8f);
-		LOG_INFO("AlarmEngine", QString("加载高优先级报警音效: %1").arg(highSoundPath));
+		if (QFile::exists(highSoundPath)) {
+			m_alarmSoundHigh->setSource(QUrl::fromLocalFile(highSoundPath));
+			m_alarmSoundHigh->setVolume(0.8f);
+			LOG_INFO("AlarmEngine", QString("加载高优先级报警音效: %1").arg(highSoundPath));
+		} else {
+			LOG_WARN("AlarmEngine", QString("高优先级报警音效文件不存在: %1，报警时将静音").arg(highSoundPath));
+		}
+
+		if (QFile::exists(lowSoundPath)) {
+			m_alarmSoundLow->setSource(QUrl::fromLocalFile(lowSoundPath));
+			m_alarmSoundLow->setVolume(0.5f);
+			LOG_INFO("AlarmEngine", QString("加载低优先级报警音效: %1").arg(lowSoundPath));
+		} else {
+			LOG_WARN("AlarmEngine", QString("低优先级报警音效文件不存在: %1，报警时将静音").arg(lowSoundPath));
+		}
 	} else {
-		LOG_WARN("AlarmEngine", QString("高优先级报警音效文件不存在: %1，报警时将静音").arg(highSoundPath));
-	}
-
-	if (QFile::exists(lowSoundPath)) {
-		m_alarmSoundLow->setSource(QUrl::fromLocalFile(lowSoundPath));
-		m_alarmSoundLow->setVolume(0.5f);
-		LOG_INFO("AlarmEngine", QString("加载低优先级报警音效: %1").arg(lowSoundPath));
-	} else {
-		LOG_WARN("AlarmEngine", QString("低优先级报警音效文件不存在: %1，报警时将静音").arg(lowSoundPath));
+		LOG_WARN("AlarmEngine", "无音频输出设备，报警音效已禁用");
 	}
 
 	LOG_INFO("AlarmEngine", "报警引擎初始化完成");

@@ -1,3 +1,0 @@
-C:\Cmake\bin\cmake.exe -E rm -f CMakeFiles\TestAlarmEngine.dir/objects.a
-C:\Qt\Tools\mingw1120_64\bin\ar.exe qc CMakeFiles\TestAlarmEngine.dir/objects.a @CMakeFiles\TestAlarmEngine.dir\objects1.rsp
-C:\Qt\Tools\mingw1120_64\bin\c++.exe -g -Wl,--whole-archive CMakeFiles\TestAlarmEngine.dir/objects.a -Wl,--no-whole-archive -o TestAlarmEngine.exe -Wl,--out-implib,libTestAlarmEngine.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\TestAlarmEngine.dir\linkLibs.rsp

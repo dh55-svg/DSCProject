@@ -1,3 +1,17 @@
 data/
 logs/
 x64/
+build/
+tests/build/
+tests/*.exe
+tests/*.ilk
+tests/*.pdb
+tests/*.log
+tests/*.txt
+tests/_*.bat
+tests/_*.cpp
+*.user
+.vs/
+CMakeFiles/
+cmake_install.cmake
+CMakeCache.txt
