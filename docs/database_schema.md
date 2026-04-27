@@ -6,7 +6,7 @@
 
 ---
 
-## 一、表清单（共 12 张设计表，代码已实现 3+1 张核心表）
+## 一、表清单（共 12 张）
 
 | #   | 表名                 | 用途                 | 核心模块                              |
 | --- | ------------------ | ------------------ | --------------------------------- |
@@ -14,7 +14,7 @@
 | 2   | `history_data`     | 历史时序数据（分区表）        | DataEngine / HistoryArchiveThread |
 | 3   | `alarms`           | 报警事件（ISA-18.2 全字段） | AlarmEngine                       |
 | 4   | `alarm_change_log` | 报警参数变更审计           | AlarmChangeLog                    |
-| 5   | `alarm_kpi`        | 报警 KPI 快照          | AlarmKpiMonitor / AlarmEngine     |
+| 5   | `alarm_kpi`        | 报警 KPI 快照          | AlarmKpiMonitor                   |
 | 6   | `operation_log`    | 操作日志               | AuthManager                       |
 | 7   | `users`            | 用户账户               | AuthManager                       |
 | 8   | `user_roles`       | 角色权限（RBAC）         | AuthManager                       |
@@ -22,8 +22,6 @@
 | 10  | `system_events`    | 系统事件               | SystemHealthMonitor               |
 | 11  | `shift_logs`       | 交接班记录              | —                                 |
 | 12  | `backup_log`       | 数据备份恢复             | DataBackupManager                 |
-
-> **2026/04 商业化增强更新**：`alarm_kpi` 表已通过 `DatabaseManager::insertKpiSnapshot()` 实现持久化写入（每 5 分钟）。`alarms` 表字段已扩展至 ISA-18.2 全字段。
 
 ---
 
@@ -49,40 +47,11 @@ CREATE TABLE tags (
     low_limit       DOUBLE          NOT NULL DEFAULT 10.0,
     low_low_limit   DOUBLE          NOT NULL DEFAULT 5.0,
 
-    -- 偏差报警限值（商业化增强）
-    deviation_limit DOUBLE          NOT NULL DEFAULT 10.0,
-    deviation_enabled TINYINT       NOT NULL DEFAULT 0,
-    -- 变化率报警限值（商业化增强）
-    rate_of_change_limit DOUBLE     NOT NULL DEFAULT 0.0,
-    rate_of_change_period_ms INT UNSIGNED DEFAULT 60000,
-    rate_of_change_enabled TINYINT  NOT NULL DEFAULT 0,
-
     -- 报警参数
     deadband        DOUBLE          NOT NULL DEFAULT 1.0,
-    on_delay_ms     INT UNSIGNED    NOT NULL DEFAULT 3000 COMMENT '触发延时（On-Delay）',
-    off_delay_ms    INT UNSIGNED    NOT NULL DEFAULT 0 COMMENT '恢复延时（Off-Delay，商业化增强）',
+    on_delay_ms     INT UNSIGNED    NOT NULL DEFAULT 3000,
     priority        TINYINT UNSIGNED NOT NULL DEFAULT 2 COMMENT '0=Advisory 1=Minor 2=Major 3=Critical',
-    classification  TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0=Process 1=Safety 2=Enviro 3=Quality 4=Machinery 5=Electrical 6=Instrument',
-
-    -- 报警启用开关
-    alarm_enabled   TINYINT         NOT NULL DEFAULT 1,
-    high_high_enabled TINYINT       NOT NULL DEFAULT 1,
-    high_enabled    TINYINT         NOT NULL DEFAULT 1,
-    low_enabled     TINYINT         NOT NULL DEFAULT 1,
-    low_low_enabled TINYINT         NOT NULL DEFAULT 1,
-
-    -- 重复报警保护（Chattering Protection）
-    max_repeats_per_min INT UNSIGNED DEFAULT 3,
-    repeat_count    INT UNSIGNED    DEFAULT 0,
-    repeat_window_start BIGINT      DEFAULT 0,
-
-    -- 区域/分区（商业化增强）
-    area            VARCHAR(64)     DEFAULT '' COMMENT '报警区域：反应工段/罐区',
-    zone            VARCHAR(64)     DEFAULT '' COMMENT '报警分区：R-101区域',
-
-    -- 通知策略
-    notification_type TINYINT UNSIGNED DEFAULT 2 COMMENT '0=None 1=Visual 2=Audible 3=Page 4=Email 5=Escalation',
-    escalation_timeout_sec INT UNSIGNED DEFAULT 0 COMMENT '升级超时（秒），0=不升级',
+    classification  TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0=Process 1=Safety 2=Enviro 3=Quality 4=Machinery',
 
     -- 本安防爆区域（化工特殊需求）
     is_safety_instrumented TINYINT  NOT NULL DEFAULT 0 COMMENT '是否 SIS 联锁',
@@ -155,22 +124,19 @@ CREATE TABLE alarms (
     tag_id          INT UNSIGNED    NOT NULL,
     tag_name        VARCHAR(64)     NOT NULL,
 
-    -- ISA-18.2 属性（商业化扩展）
-    limit_level     TINYINT UNSIGNED NOT NULL COMMENT '0=Normal 1=LL 2=L 3=H 4=HH 5=Deviation 6=RateOfChange',
-    priority        TINYINT UNSIGNED NOT NULL DEFAULT 2 COMMENT '0=Advisory 1=Minor 2=Major 3=Critical',
-    classification  TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0=Process 1=Safety 2=Enviro 3=Quality 4=Machinery 5=Electrical 6=Instrument',
+    -- ISA-18.2 属性
+    limit_level     TINYINT UNSIGNED NOT NULL COMMENT '0=Normal 1=LL 2=L 3=H 4=HH',
+    priority        TINYINT UNSIGNED NOT NULL DEFAULT 2,
+    classification  TINYINT UNSIGNED NOT NULL DEFAULT 0,
 
     -- 触发数据
     trigger_value   DOUBLE          NOT NULL,
     threshold_value DOUBLE          NOT NULL,
     description     VARCHAR(500)    DEFAULT '',
-    return_value    DOUBLE          DEFAULT 0 COMMENT '恢复时的值',
 
     -- ISA-18.2 状态机时间戳
     trigger_time        BIGINT      NOT NULL COMMENT '触发',
-    first_trigger_time  BIGINT      DEFAULT 0 COMMENT '首次触发（用于重复率计算）',
     on_delay_start      BIGINT      DEFAULT 0 COMMENT 'On-Delay 开始',
-    off_delay_start     BIGINT      DEFAULT 0 COMMENT 'Off-Delay 开始（商业化增强）',
     acknowledge_time    BIGINT      DEFAULT 0 COMMENT '确认',
     return_to_normal_time BIGINT    DEFAULT 0 COMMENT '值回正常',
     return_ack_time     BIGINT      DEFAULT 0 COMMENT '恢复确认',
@@ -179,44 +145,14 @@ CREATE TABLE alarms (
     shelve_time         BIGINT      DEFAULT 0 COMMENT '屏蔽时间',
     shelve_reason       VARCHAR(255) DEFAULT '',
     shelve_duration_sec INT UNSIGNED DEFAULT 0,
-    shelve_user         VARCHAR(64)  DEFAULT '' COMMENT '屏蔽操作员',
 
-    -- Suppression（设计抑制 — 商业化增强）
-    suppression_type    TINYINT UNSIGNED DEFAULT 0 COMMENT '0=None 1=DesignSuppression 2=OutOfService 3=Interlock 4=Override',
-    suppression_reason  VARCHAR(255) DEFAULT '',
-    suppression_user    VARCHAR(64)  DEFAULT '',
-    suppression_time    BIGINT       DEFAULT 0,
-
-    -- Out-of-Service（停用 — 商业化增强）
-    out_of_service      TINYINT      NOT NULL DEFAULT 0,
-    out_of_service_reason VARCHAR(255) DEFAULT '',
-    out_of_service_user VARCHAR(64)  DEFAULT '',
-    work_order_no       VARCHAR(64)  DEFAULT '' COMMENT '关联维护工单号',
-
-    -- 操作员注释（ISA-18.2 Operator Annotation）
-    operator_annotation VARCHAR(500) DEFAULT '',
-    annotation_time     BIGINT       DEFAULT 0,
-    annotation_user     VARCHAR(64)  DEFAULT '',
-
-    -- 区域/分区
-    area            VARCHAR(64)      DEFAULT '' COMMENT '报警区域',
-    zone            VARCHAR(64)      DEFAULT '' COMMENT '报警分区',
-
-    -- 通知策略
-    notification_type   TINYINT UNSIGNED DEFAULT 2 COMMENT '0=None 1=Visual 2=Audible 3=Page 4=Email 5=Escalation',
-    last_notification_time BIGINT    DEFAULT 0,
-    notification_count  INT UNSIGNED DEFAULT 0,
-
-    -- 重复计数（Flood Protection 用）
-    repeat_count    INT UNSIGNED    DEFAULT 0,
-
-    -- 状态（ISA-18.2 八状态机）
-    state           TINYINT UNSIGNED NOT NULL COMMENT '0=Normal 1=ActiveUnack 2=ActiveAck 3=RTNUnack 4=RTNAck 5=Shelved 6=SuppressedByDesign 7=OutOfService',
+    -- 状态
+    state           TINYINT UNSIGNED NOT NULL COMMENT '0=Normal 1=ActiveUnack 2=ActiveAck 3=RTNUnack 4=RTNAck 5=Shelved',
     acknowledged    TINYINT         NOT NULL DEFAULT 0,
     shelved         TINYINT         NOT NULL DEFAULT 0,
     cleared         TINYINT         NOT NULL DEFAULT 0,
 
-    -- 确认人（身份绑定 — 不足6修复）
+    -- 确认人
     acknowledge_by  VARCHAR(64)     DEFAULT '',
 
     PRIMARY KEY (id),
@@ -225,7 +161,6 @@ CREATE TABLE alarms (
     KEY idx_trigger_time (trigger_time),
     KEY idx_state (state, cleared, trigger_time),
     KEY idx_priority_unack (priority, acknowledged, trigger_time),
-    KEY idx_area (area, trigger_time),
     CONSTRAINT fk_alarm_tag FOREIGN KEY (tag_id) REFERENCES tags(tag_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
@@ -245,21 +180,10 @@ CREATE TABLE alarm_change_log (
     operator_name   VARCHAR(64)     NOT NULL COMMENT '修改人',
     change_time     BIGINT          NOT NULL,
 
-    -- 审批流程（商业化增强）
+    -- 审批流程
     approved        TINYINT         NOT NULL DEFAULT 0,
     approver        VARCHAR(64)     DEFAULT NULL,
     approve_time    BIGINT          DEFAULT 0,
-    rejected        TINYINT         NOT NULL DEFAULT 0 COMMENT '是否已驳回',
-    reject_reason   VARCHAR(500)    DEFAULT '',
-
-    -- 商业化扩展
-    work_order_no   VARCHAR(64)     DEFAULT '' COMMENT '关联工单号',
-    valid_until     BIGINT          DEFAULT 0 COMMENT '有效期截止（0=永久），临时修改自动恢复',
-    auto_reverted   TINYINT         NOT NULL DEFAULT 0 COMMENT '是否已自动恢复',
-
-    -- 审计追踪
-    session_id      VARCHAR(128)    DEFAULT '' COMMENT '操作会话ID（防抵赖）',
-    workstation     VARCHAR(128)    DEFAULT '' COMMENT '操作站名称',
 
     PRIMARY KEY (id),
     KEY idx_tag_id (tag_id),
@@ -274,39 +198,16 @@ CREATE TABLE alarm_change_log (
 ```sql
 CREATE TABLE alarm_kpi (
     id                  BIGINT      NOT NULL AUTO_INCREMENT,
-    snapshot_time       BIGINT      NOT NULL COMMENT '快照时间戳',
+    snapshot_time       BIGINT      NOT NULL,
 
-    -- EEMUA 191 核心指标
     alarm_count_10min   INT         NOT NULL DEFAULT 0 COMMENT '10 分钟报警率',
     avg_per_hour        FLOAT       NOT NULL DEFAULT 0 COMMENT '平均报警率/小时',
     peak_count_10min    INT         NOT NULL DEFAULT 0 COMMENT '高峰报警率',
     stale_count         INT         NOT NULL DEFAULT 0 COMMENT '陈旧报警(>30min 未确认)',
-    stale_alarm_percent INT         NOT NULL DEFAULT 0 COMMENT '陈旧报警百分比',
     total_active        INT         NOT NULL DEFAULT 0,
     shelved_count       INT         NOT NULL DEFAULT 0,
-    suppressed_count    INT         NOT NULL DEFAULT 0 COMMENT '被抑制数（商业化增强）',
 
-    -- 商业化增强指标
-    flood_event_count   INT         NOT NULL DEFAULT 0 COMMENT '报警泛滥事件次数',
-    flood_duration_min  FLOAT       NOT NULL DEFAULT 0 COMMENT '泛滥持续时间（分钟）',
-    avg_ack_time_sec    FLOAT       NOT NULL DEFAULT 0 COMMENT '平均确认时间（秒）',
-    chattering_count    INT         NOT NULL DEFAULT 0 COMMENT '震荡报警数（1分钟重复>=3次）',
-
-    -- 优先级分布统计
-    critical_count      INT         NOT NULL DEFAULT 0,
-    major_count         INT         NOT NULL DEFAULT 0,
-    minor_count         INT         NOT NULL DEFAULT 0,
-    advisory_count      INT         NOT NULL DEFAULT 0,
-
-    -- Top-N 分析
-    top5_frequent       VARCHAR(500) DEFAULT '' COMMENT '最频繁5个位号名（逗号分隔）',
-    top5_stale          VARCHAR(500) DEFAULT '' COMMENT '最陈旧5个位号名',
-
-    -- 系统健康度
-    system_health_score FLOAT       NOT NULL DEFAULT 100.0 COMMENT '报警系统健康度 0-100',
-    health_grade        VARCHAR(4)  DEFAULT 'A' COMMENT 'A/B/C/D/F',
-
-    -- 阈值超限标记
+    -- 推荐的阈值与是否超限
     rate_exceeded       TINYINT     DEFAULT 0,
     peak_exceeded       TINYINT     DEFAULT 0,
     stale_exceeded      TINYINT     DEFAULT 0,
@@ -344,8 +245,8 @@ CREATE TABLE users (
     user_id         INT UNSIGNED    NOT NULL AUTO_INCREMENT,
     username        VARCHAR(64)     NOT NULL,
     -- 密码绝不能明文存储！
-    password_hash   VARCHAR(256)    NOT NULL COMMENT 'PBKDF2-SHA256 哈希（格式: iterations$salt$hash）',
-    password_salt   VARCHAR(64)     DEFAULT NULL COMMENT '已集成到 password_hash 中（PBKDF2 格式内含 salt）',
+    password_hash   VARCHAR(256)    NOT NULL COMMENT 'bcrypt / argon2 哈希',
+    password_salt   VARCHAR(64)     DEFAULT NULL COMMENT '如果不用 bcrypt 需要加盐',
     real_name       VARCHAR(64)     DEFAULT '',
     email           VARCHAR(128)    DEFAULT '',
 
@@ -503,7 +404,7 @@ CREATE TABLE backup_log (
 
 1. **高频 WHERE 字段建索引** — tag_id、timestamp、username
 2. **组合索引最左匹配** — `(tag_id, timestamp)` 优于两个单列索引
-3. **低选择性字段不建单列索引** — `state` 只有 8 个值，必须和 cleared 组合使用
+3. **低选择性字段不建单列索引** — `state` 只有 6 个值，必须和 cleared 组合使用
 4. **索引不是越多越好** — 每多一个索引，写入慢一份
 
 ---
@@ -564,13 +465,12 @@ expire_logs_days = 7
 
 | #   | 项目        | 原型当前状态      | 商用要求                          |
 | --- | --------- | ----------- | ----------------------------- |
-| 1   | **密码安全**  | PBKDF2-SHA256（10000轮+随机盐）✅ | bcrypt/argon2 + 加盐 + 90 天过期策略 |
+| 1   | **密码安全**  | SHA256 简单哈希 | bcrypt/argon2 + 加盐 + 90 天过期策略 |
 | 2   | **防篡改审计** | 操作日志可删      | 加触发器禁止 DELETE/UPDATE + 定期备份   |
-| 3   | **报警KPI**  | 已实现每5分钟持久化 ✅ | 时序数据库 + 自动KPI报告             |
+|     |           |             |                               |
 | 4   | **数据归档**  | 全部在线        | 按月分区 + 6 个月归档脚本               |
 | 5   | **权限粒度**  | 4 级硬编码      | RBAC 角色 + 位掩码精细权限             |
 | 6   | **连接安全**  | TCP 明文      | TLS 加密 + 客户端证书认证              |
-| 7   | **报警字段**  | ISA-18.2 全字段 ✅ | 完整八状态机 + 抑制 + OOS + 条件抑制规则  |
 
 ---
 
@@ -836,28 +736,16 @@ QVector<HistoryRecord> queryHistory(quint32 tagId,
 ### 10.3 报警记录
 
 ```cpp
-// 插入报警记录（ISA-18.2 全字段）
-bool insertAlarmRecord(const AlarmEvent& event);
-
-// 更新报警确认信息（身份绑定 — 不足6修复）
-bool updateAlarmAck(const QString& alarmId,
-    const QString& acknowledgeUser, qint64 acknowledgeTime);
+// 插入报警记录
+bool insertAlarmRecord(quint32 tagId, int severity,
+    const QString& description,
+    double triggerValue, double thresholdValue,
+    qint64 timestamp);
 
 // 查询报警历史
 QVector<QVariantMap> queryAlarmHistory(
     const QDateTime& startTime, const QDateTime& endTime,
     int limit = 500);
-```
-
-### 10.3b 报警 KPI 持久化（商业化增强 — 不足7修复）
-
-```cpp
-// 插入 KPI 快照（每 5 分钟由 AlarmEngine 自动调用）
-bool insertKpiSnapshot(const AlarmKpiSnapshot& snapshot);
-
-// 查询 KPI 趋势
-QVector<AlarmKpiSnapshot> queryKpiHistory(
-    const QDateTime& startTime, const QDateTime& endTime);
 ```
 
 ### 10.4 操作日志
@@ -892,9 +780,7 @@ struct HistoryRecord {
 | 连接重建      | DatabaseManager.cpp | `reconnect()`              | removeDatabase + addDatabase |
 | 批量写历史     | DatabaseManager.cpp | `batchInsertHistory()`     | 事务 + 批量 VALUES               |
 | 查询历史      | DatabaseManager.cpp | `queryHistory()`           | 按时间范围查询                      |
-| 写报警记录     | DatabaseManager.cpp | `insertAlarmRecord()`      | ISA-18.2 全字段写入                 |
-| 更新报警确认    | DatabaseManager.cpp | `updateAlarmAck()`         | 确认身份绑定（不足6修复）               |
-| 写 KPI 快照   | DatabaseManager.cpp | `insertKpiSnapshot()`      | 每5分钟持久化（不足7修复）              |
+| 写报警记录     | DatabaseManager.cpp | `insertAlarmRecord()`      | 报警触发时调用                      |
 | 查报警历史     | DatabaseManager.cpp | `queryAlarmHistory()`      | 按时间范围查询                      |
 | 写操作日志     | DatabaseManager.cpp | `insertOperationLog()`     | 关键操作时调用                      |
 | 关闭连接      | DatabaseManager.cpp | `shutdown()`               | 优雅关闭                         |
@@ -1248,19 +1134,18 @@ bool DatabaseManager::createTables()
 
 | #   | 差异点                  | 文档定义                               | 代码实现                               | 影响                            |
 | --- | -------------------- | ---------------------------------- | ---------------------------------- | ----------------------------- |
-| 1   | **表数量**              | 12 张完整业务表                          | 3+1 张核心表（已新增 alarm_kpi 写入）         | 用户/角色/权限/备份等表待创建              |
-| 2   | **报警表名**             | `alarms`（ISA-18.2 全字段）            | `alarm_history`（简化版）               | 字段差距已缩小（2026/04 商业化增强）       |
+| 1   | **表数量**              | 12 张完整业务表                          | 仅 3 张核心表                           | 用户/角色/权限/KPI/备份等表未创建          |
+| 2   | **报警表名**             | `alarms`（ISA-18.2 完整字段）            | `alarm_history`（简化版）               | 缺少 alarm_id、state、shelved 等字段 |
 | 3   | **operation_log 字段** | 含 user_level、client_ip、workstation | 仅 username、action、detail、timestamp | 无法追踪客户端来源和用户级别                |
 | 4   | **history_data 分区**  | 定义了 RANGE PARTITION                | 未创建分区                              | 大数据量时查询性能下降                   |
 | 5   | **外键约束**             | alarms.tag_id → tags.tag_id        | 无外键                                | 数据完整性依赖应用层保证                  |
-| 6   | **tags 位号配置表**       | 有完整定义（含 Off-Delay/Deviation/RoC）  | 未创建（TagConfigMgr 使用 JSON）          | JSON 文件不支持并发行级配置             |
-| 7   | **alarm_kpi 表**       | 完整 KPI 字段（含健康度评分）                 | ✅ 已实现 insertKpiSnapshot()         | 每5分钟持久化，支持长期趋势查询             |
+| 6   | **tags 位号配置表**       | 有完整定义                              | 未创建                                | TagConfigMgr 使用 JSON 文件存储     |
 
-**2026/04 改进说明**：
-- ✅ `alarm_kpi` 表已通过 `DatabaseManager::insertKpiSnapshot()` 实现每5分钟持久化
-- ✅ 报警引擎已支持 ISA-18.2 八状态机 + Off-Delay + 条件抑制 + 洪水保护
-- ✅ 密码安全已升级为 PBKDF2-SHA256（10000轮+随机盐）
-- ⚠️ `alarms` 表字段需补全（详见不足4），当前 `AlarmEngine` 在内存中维护完整状态
+**差异原因分析**：
+
+- 项目处于**原型阶段**，优先实现核心功能（历史数据+报警+日志）
+- 用户管理、权限控制等功能由 `AuthManager` 内存管理，尚未持久化
+- ISA-18.2 完整报警状态机字段在 `AlarmEngine` 内存中维护，数据库只存快照
 
 ---
 
@@ -1498,11 +1383,9 @@ public:
 };
 ```
 
-#### 不足 4：报警表字段过于简化（不符合 ISA-18.2）⚠️ 部分改进
+#### 不足 4：报警表字段过于简化（不符合 ISA-18.2）
 
-**2026/04 更新**：`AlarmEngine` 内存中已维护完整 ISA-18.2 状态机字段，数据库表字段文档已更新为全字段版本。`insertKpiSnapshot()` 已实现 KPI 持久化。`alarms` 表完整字段（含 suppression/OOS/annotation/area/zone/notification/repeat_count）的 DB 写入待 `insertAlarmRecord()` 重构完成后实现。
-
-**文档定义的 alarms 表**（完整版，已更新）：
+**文档定义的 alarms 表**（完整版）：
 
 ```sql
 CREATE TABLE alarms (
@@ -1527,18 +1410,18 @@ CREATE TABLE alarm_history (
 );
 ```
 
-**缺失的关键字段及影响**（2026/04 更新 — AlarmEngine 内存已补全，DB 表待同步）：
+**缺失的关键字段及影响**：
 
-| 缺失字段                    | ISA-18.2 要求            | 内存状态 | DB 状态 |
-| ----------------------- | ---------------------- | ----- | ----- |
-| `state` (八状态)           | 状态机（含 Suppressed/OOS）  | ✅ 完整 | ⚠️ 待同步 |
-| `shelved` / `shelve_reason` | 屏蔽状态与原因               | ✅ 完整 | ⚠️ 待同步 |
-| `suppression_type`       | 抑制类型（Design/OOS/Interlock） | ✅ 完整 | ⚠️ 待同步 |
-| `off_delay_start`        | Off-Delay 开始时间          | ✅ 已实现 | ⚠️ 待同步 |
-| `acknowledge_user`       | 确认操作员身份绑定              | ✅ 已实现 | ⚠️ 待同步 |
-| `priority` / `classification` | 优先级（7 种分类）            | ✅ 完整 | ⚠️ 待同步 |
-| `area` / `zone`          | 区域/分区管理                | ✅ 已定义 | ⚠️ 待同步 |
-| `notification_type`      | 通知策略                   | ✅ 已定义 | ⚠️ 待同步 |
+| 缺失字段                    | ISA-18.2 要求            | 影响                     |
+| ----------------------- | ---------------------- | ---------------------- |
+| `alarm_id`              | 唯一标识符                  | 无法追溯具体报警事件（审计缺失）       |
+| `state`                 | 状态机（Normal→Active→RTN） | 无法统计各状态的持续时间（KPI 计算不准） |
+| `shelved`               | 屏蔽状态                   | 无法查询哪些报警被屏蔽（合规风险）      |
+| `shelve_reason`         | 屏蔽原因                   | 无法审计屏蔽操作的合理性（监管要求）     |
+| `on_delay_start`        | On-Delay 开始时间          | 无法计算真实触发时间（报警洪水分析困难）   |
+| `return_to_normal_time` | 值回正常时间                 | 无法计算 RTN 响应时间（KPI 缺失）  |
+| `priority`              | 优先级（Advisory/Critical） | 无法按优先级统计分析（报表不准确）      |
+| `classification`        | 分类（Process/Safety）     | 无法区分工艺报警和安全联锁（合规问题）    |
 
 **改进建议**：
 
@@ -1713,22 +1596,19 @@ VALUES (10, 20);
 - RPO（恢复点目标）< 5 分钟
 - RTO（恢复时间目标）< 1 小时
 
-#### 不足 7：安全性缺陷 ⚠️ 部分改进
-
-**2026/04 更新**：应用层密码已升级为 PBKDF2-SHA256（10000轮+随机盐），`AuthManager::hashPassword()` 不再使用 SHA256 明文哈希。数据库密码硬编码问题仍待解决。
+#### 不足 7：安全性缺陷
 
 **现状**：
 
-- ✅ 应用层密码哈希已升级为 PBKDF2-SHA256
-- ❌ 数据库密码明文存储在源代码中（`password = ""`）
-- ❌ 无 TLS 加密传输（TCP 直连 MySQL）
-- ❌ 无数据库级别的访问控制（所有操作用 root 账户）
+- 密码明文存储在源代码中（`password = ""`）
+- 无 TLS 加明文传输（TCP 直连 MySQL）
+- 无数据库级别的访问控制（所有操作用 root 账户）
 
 **安全隐患**：
 
 | 风险等级  | 问题      | 攻击场景                  |
 | ----- | ------- | --------------------- |
-| 🟠 高危 | 密码硬编码   | 反编译 exe 即可获得数据库密码     |
+| 🔴 致命 | 密码硬编码   | 反编译 exe 即可获得数据库密码     |
 | 🔴 致命 | 明文传输    | 内网抓包获取敏感数据（工艺参数、报警记录） |
 | 🟠 高危 | root 权限 | SQL 注入可删除全部数据         |
 | 🟡 中危 | 无审计     | 无法追踪谁执行了危险操作          |
@@ -1857,7 +1737,7 @@ private slots:
 | **安全性**  | 明文 + root 权限   | TLS + 最小权限 + 审计                     | ⭐⭐⭐ |
 | **可维护性** | 手动清理           | 自动分区 + 归档 + 压缩                      | ⭐⭐  |
 | **监控**   | 基础日志           | Prometheus + Grafana + 自动告警         | ⭐⭐⭐ |
-| **合规性**  | ISA-18.2 Level 1-4 + 商业化增强 ✅ | 完整 ISA-18.2 Level 2~4 + 审计报告      | ⭐   |
+| **合规性**  | 部分 ISA-18.2    | 完整 ISA-18.2 Level 2~4               | ⭐⭐  |
 
 **总体评价**：
 
@@ -1869,9 +1749,9 @@ private slots:
 
 **短期（1~2 周，快速见效）**：
 
-1. ✅ **已完成** — 补全 alarms 表字段文档（满足 ISA-18.2 八状态机要求），DB 写入重构进行中
-2. ✅ **已完成** — KPI 每 5 分钟持久化到 MySQL（`insertKpiSnapshot()`）
-3. ✅ **已完成** — 密码安全升级为 PBKDF2-SHA256（10000 轮迭代 + 16 字节随机盐）
+1. ✅ 补全 `alarm_history` 表字段（满足 ISA-18.2 基本要求）
+2. ✅ 实现 `purgeOldRecords()` 定时任务（QTimer 每周执行）
+3. ✅ 密码外部化（移除硬编码，改用配置文件）
 
 **中期（1~2 月，显著提升）**：
 4. 🔧 实现连接池（解决性能瓶颈）
@@ -1974,8 +1854,7 @@ private slots:
 
 ---
 
-> **文档版本**：v2.1（商业化增强更新 — ISA-18.2 全字段 + KPI 持久化 + PBKDF2）
-> **最后更新**：2026-04-27
-> **2026/04 变更**：tags 表新增 Off-Delay/Deviation/RoC/区域/通知策略/报警开关；alarms 表扩展至 ISA-18.2 八状态机全字段；alarm_kpi 表新增健康度评分/泛滥统计/优先级分布；密码安全 PBKDF2-SHA256 ✅；KPI 每5分钟持久化 ✅
+> **文档版本**：v2.0（完整源码级分析 + 工业实战经验）
+> **最后更新**：2026-04-26
 > **适用范围**：ChemDCS / MYDSCProject 数据库模块
 > **相关文档**：[data_engine_analysis.md](./data_engine_analysis.md) | [alarm_module_analysis.md](./alarm_module_analysis.md) | [tag_config_analysis.md](./tag_config_analysis.md)

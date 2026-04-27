@@ -1011,7 +1011,7 @@ m_doubleBuffer->write(tag.tagId, snapshot);
 void MYDSCProject::onDataUpdated()
 {
     m_dataEngine->doubleBuffer()->swap();  // 切换到最新数据
-    
+
     // 遍历所有图元，逐个更新
     for (auto* item : m_graphicsItems) {
         auto snapshot = m_dataEngine->doubleBuffer()->readTag(item->tagId());
@@ -1426,12 +1426,12 @@ RealtimeDb 只做薄层转发：getTag() 委托给 TagConfigMgr，updateSetPoint
 
 ### 20.2 当前接口转发目标
 
-| 方法类别       | 示例方法                                 | 直接目标           | 说明       |
-| ---------- | ------------------------------------ | -------------- | -------- |
-| **静态配置查询** | `getTag()` / `getAllTags()`          | TagConfigMgr   | 单例直接调用   |
-| **实时值写入**  | `setSetPoint()` / `setOutput()`      | DoubleBuffer   | 写入写缓冲区   |
-| **质量码管理**  | `markAllBad()`                       | DoubleBuffer   | 批量标记 Bad |
-| **UI 更新**   | `onDataUpdated()`                    | DoubleBuffer   | swap + 遍历图元 |
+| 方法类别       | 示例方法                            | 直接目标         | 说明          |
+| ---------- | ------------------------------- | ------------ | ----------- |
+| **静态配置查询** | `getTag()` / `getAllTags()`     | TagConfigMgr | 单例直接调用      |
+| **实时值写入**  | `setSetPoint()` / `setOutput()` | DoubleBuffer | 写入写缓冲区      |
+| **质量码管理**  | `markAllBad()`                  | DoubleBuffer | 批量标记 Bad    |
+| **UI 更新**  | `onDataUpdated()`               | DoubleBuffer | swap + 遍历图元 |
 
 ### 20.3 setSetPoint 直接 DoubleBuffer 写入
 
@@ -1732,9 +1732,9 @@ void DataEngine::onAllDevicesOffline()
 | 6   | **容错配置加载**    | 错误字段自动修正而非崩溃退出                                     |
 | 7   | **SQLite 降级** | MySQL 不可用时自动降级，保证数据不丢失                             |
 | 8   | **权限拦截**      | 操作员下发前强制权限检查                                       |
-| 9   | **变化率校验**     | validateRateOfChange() 防跳变，异常值标记 Uncertain          |
-| 10  | **内存历史缓存**   | TagHistoryRing 环形缓冲区，趋势图查询 μs 级响应                 |
-| 11  | **操作安全确认**   | ISA-101 二次确认 + 审计日志持久化到 operation_log 表             |
+| 9   | **变化率校验**     | validateRateOfChange() 防跳变，异常值标记 Uncertain         |
+| 10  | **内存历史缓存**    | TagHistoryRing 环形缓冲区，趋势图查询 μs 级响应                  |
+| 11  | **操作安全确认**    | ISA-101 二次确认 + 审计日志持久化到 operation_log 表            |
 
 ### 23.3 当前实现的不足（商用化必须解决）
 
@@ -1787,24 +1787,24 @@ Active (主) ◄──── 心跳/数据同步 ────▶ Standby (备)
 
 ### 23.4 性能瓶颈预判
 
-| 场景     | 当前容量           | 商用要求       | 瓶颈点                          |
-| ------ | -------------- | ---------- | ---------------------------- |
-| 位号数量   | ~500（QHash 索引） | 100,000+   | 索引需改为 B+树或分片                 |
-| 采集周期   | 100ms 最快       | 1~10ms     | Modbus TCP 本身限制，需换协议         |
+| 场景     | 当前容量             | 商用要求       | 瓶颈点                                            |
+| ------ | ---------------- | ---------- | ---------------------------------------------- |
+| 位号数量   | ~500（QHash 索引）   | 100,000+   | 索引需改为 B+树或分片                                   |
+| 采集周期   | 100ms 最快         | 1~10ms     | Modbus TCP 本身限制，需换协议                           |
 | 历史数据点  | 最近 1h 常驻内存（环形缓存） | 24h+ 全量时序库 | HistoryArchiveThread TagHistoryRing，3600 条/tag |
-| 下发延迟   | 同步阻塞           | 异步+确认      | writeRegister 应改为异步          |
-| UI 刷新率 | 10~20fps       | 60fps      | DoubleBuffer commit 频率不够     |
-| 断网恢复   | 手动重连           | 自动重连+断点续传  | 需增加离线缓存队列                    |
+| 下发延迟   | 同步阻塞             | 异步+确认      | writeRegister 应改为异步                            |
+| UI 刷新率 | 10~20fps         | 60fps      | DoubleBuffer commit 频率不够                       |
+| 断网恢复   | 手动重连             | 自动重连+断点续传  | 需增加离线缓存队列                                      |
 
 ### 23.5 安全性不足
 
-| 项目    | 当前状态             | 商用要求                                     |
-| ----- | ---------------- | ---------------------------------------- |
-| 下发权限  | 仅检查 canOperate() | 需要"双人复核"（Four-Eyes Principle）            |
-| SP 范围 | 量程钳位             | 需要 SP 上下限独立于量程（如 80±5℃）                  |
-| 速率限制  | 无                | 防止快速连续下发（DDoS 自身）                        |
+| 项目    | 当前状态                     | 商用要求                                                   |
+| ----- | ------------------------ | ------------------------------------------------------ |
+| 下发权限  | 仅检查 canOperate()         | 需要"双人复核"（Four-Eyes Principle）                          |
+| SP 范围 | 量程钳位                     | 需要 SP 上下限独立于量程（如 80±5℃）                                |
+| 速率限制  | 无                        | 防止快速连续下发（DDoS 自身）                                      |
 | 操作追溯  | 持久化审计日志（operation_log 表） | 操作审计日志通过 AuthManager::logAction() → DatabaseManager 写入 |
-| 远程访问  | 无                | VPN + TLS + 白名单 IP                       |
+| 远程访问  | 无                        | VPN + TLS + 白名单 IP                                     |
 
 ### 23.6 可靠性不足
 
@@ -1820,17 +1820,17 @@ Active (主) ◄──── 心跳/数据同步 ────▶ Standby (备)
 
 ## 廿四、面试加分项速查表
 
-| 问题                      | 关键词           | 答案要点                                          |
-| ----------------------- | ------------- | --------------------------------------------- |
-| 为什么用无锁队列？               | MPSC          | 多设备并发入队，单消费者出队，消除锁竞争                          |
-| RCU 双缓冲原理？              | shared_ptr    | 写线程 move→原子发布→读线程引用计数保护                       |
-| 为什么 alignas(64)？        | False Sharing | 不同原子变量放不同缓存行，避免伪共享                            |
-| Capacity 为什么是 2 的幂？     | 位运算优化         | `& mask` 替代 `% Capacity`，快 5-10 倍             |
-| RawModbusData 为什么用固定数组？ | POD-like      | 避免 QVector 堆分配，memcpy 安全                      |
-| 四层频率解耦？                 | 采/解/Swap/UI   | 各层独立定时，互不影响                                   |
-| 智能休眠策略？                 | 自适应           | 有数据 1ms，无数据 20ms，CPU < 5%                     |
-| 批量处理优势？                 | 256条/批        | amortized O(1)，比逐条快 10 倍                      |
-| 配置容错原则？                 | 宽松解析          | ERROR 跳过/WARN 修正，不因配置错误崩溃                     |
-| SQLite 降级意义？            | 高可用           | MySQL 不可用时本地存储，保证数据不丢                         |
-| 商用最大差距？                 | 多协议/热备/压缩     | 单协议/单机/无压缩                                    |
-| writeRegister 参数设计？      | deviceId + serverAddr | TagInfo 区分 modbusDeviceId（设备ID）和 modbusServerAddr（从站地址） |
+| 问题                      | 关键词                   | 答案要点                                                    |
+| ----------------------- | --------------------- | ------------------------------------------------------- |
+| 为什么用无锁队列？               | MPSC                  | 多设备并发入队，单消费者出队，消除锁竞争                                    |
+| RCU 双缓冲原理？              | shared_ptr            | 写线程 move→原子发布→读线程引用计数保护                                 |
+| 为什么 alignas(64)？        | False Sharing         | 不同原子变量放不同缓存行，避免伪共享                                      |
+| Capacity 为什么是 2 的幂？     | 位运算优化                 | `& mask` 替代 `% Capacity`，快 5-10 倍                       |
+| RawModbusData 为什么用固定数组？ | POD-like              | 避免 QVector 堆分配，memcpy 安全                                |
+| 四层频率解耦？                 | 采/解/Swap/UI           | 各层独立定时，互不影响                                             |
+| 智能休眠策略？                 | 自适应                   | 有数据 1ms，无数据 20ms，CPU < 5%                               |
+| 批量处理优势？                 | 256条/批                | amortized O(1)，比逐条快 10 倍                                |
+| 配置容错原则？                 | 宽松解析                  | ERROR 跳过/WARN 修正，不因配置错误崩溃                               |
+| SQLite 降级意义？            | 高可用                   | MySQL 不可用时本地存储，保证数据不丢                                   |
+| 商用最大差距？                 | 多协议/热备/压缩             | 单协议/单机/无压缩                                              |
+| writeRegister 参数设计？     | deviceId + serverAddr | TagInfo 区分 modbusDeviceId（设备ID）和 modbusServerAddr（从站地址） |
