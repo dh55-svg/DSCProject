@@ -1,7 +1,7 @@
 ﻿#pragma once
 #include "export.h"
 #include "TagDef.h"
-#include "RealtimeDb.h"
+#include "TagConfigMgr.h"
 #include <QGraphicsItem>
 #include <QJsonObject>
 #include <QString>
@@ -41,7 +41,7 @@ public:
     // 获取图元类型名（用于组态识别）
     virtual QString itemTypeName() const = 0;
 
-    // 数据更新回调（由RealtimeDb的回调机制触发）
+    // 数据更新回调（由 MYDSCProject::onDataUpdated 从 DoubleBuffer 读取后调用）
     void onTagValueChanged(quint32 tagId, float newValue);
 signals:
     // 图元被点击（用于弹出操作面板）

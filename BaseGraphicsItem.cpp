@@ -10,8 +10,8 @@ BaseGraphicsItem::BaseGraphicsItem(QGraphicsItem* parent):QGraphicsObject(parent
 void BaseGraphicsItem::bindTag(const QString& tagName)
 {
 	m_tagName = tagName;
-	// 从RealtimeDb查找位号ID
-	TagInfo tag = RealtimeDb::instance().getTagByName(m_tagName);
+	// 从TagConfigMgr查找位号ID
+	TagInfo tag = TagConfigMgr::instance().getTagByName(m_tagName);
 	if (tag.tagId == 0)
 	{
 		LOG_WARN("Graphics", QString("位号不存在: %1").arg(tagName));
@@ -23,14 +23,8 @@ void BaseGraphicsItem::bindTag(const QString& tagName)
 	m_alarmState = tag.alarm();
 	m_quality = tag.qual();
 
-	// 注册数据变更回调
-	// 当位号值变化时，RealtimeDb会调用onTagValueChanged
-	RealtimeDb::instance().registerCallback(m_tagId,
-		[this](quint32 tagId, float newValue) {
-			QMetaObject::invokeMethod(this, [this, tagId, newValue]() {
-				onTagValueChanged(tagId, newValue);
-				}, Qt::QueuedConnection);
-		});
+	// 数据更新由 MYDSCProject::onDataUpdated() 驱动：
+	// 定时从 DoubleBuffer 读取最新值，调用 onTagValueChanged()
 
 	LOG_INFO("Graphics", QString("图元绑定位号: %1 (ID=%2)")
 		.arg(tagName).arg(m_tagId));
@@ -61,7 +55,7 @@ void BaseGraphicsItem::onTagValueChanged(quint32 tagId, float newValue)
 	}
 	m_tagValue = newValue;
 	// 同步更新报警状态和质量码
-	TagInfo tag = RealtimeDb::instance().getTag(tagId);
+	TagInfo tag = TagConfigMgr::instance().getTag(tagId);
 	if (tag.tagId != 0) {
 		m_alarmState = tag.alarm();
 		m_quality = tag.qual();

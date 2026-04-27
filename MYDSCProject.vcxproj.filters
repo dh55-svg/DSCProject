@@ -130,9 +130,6 @@
     <ClCompile Include="DataParseThread.cpp">
       <Filter>dataengine</Filter>
     </ClCompile>
-    <ClCompile Include="RealtimeDb.cpp">
-      <Filter>dataengine</Filter>
-    </ClCompile>
     <ClCompile Include="TagConfigMgr.cpp">
       <Filter>dataengine</Filter>
     </ClCompile>
@@ -195,9 +192,6 @@
       <Filter>dataengine</Filter>
     </QtMoc>
     <QtMoc Include="TagConfigMgr.h">
-      <Filter>dataengine</Filter>
-    </QtMoc>
-    <QtMoc Include="RealtimeDb.h">
       <Filter>dataengine</Filter>
     </QtMoc>
     <QtMoc Include="DatabaseManager.h">

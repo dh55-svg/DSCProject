@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <QtWidgets/QMainWindow>
 #include "ui_MYDSCProject.h"
@@ -17,6 +17,10 @@
 #include <QScrollBar>
 #include <QSlider>
 #include <QComboBox>
+#include <QProgressBar>
+#include <QSpinBox>
+#include <QGroupBox>
+#include <QGridLayout>
 
 #include "logger.h"
 #include "DataEngine.h"
@@ -93,6 +97,38 @@ private slots:
     void onZoomFit();
     void onZoomSliderChanged(int value);
 
+    // === ISA-18.2 报警操作槽 ===
+
+    /// 报警过滤条件变更
+    void onAlarmFilterChanged();
+
+    /// 屏蔽报警（ISA-18.2 Shelve）
+    void onShelveAlarm(quint32 tagId);
+
+    /// 取消屏蔽
+    void onUnshelveAlarm(quint32 tagId);
+
+    /// 设计抑制（ISA-18.2 Suppression-by-Design）
+    void onSuppressAlarm(quint32 tagId);
+
+    /// 取消抑制
+    void onUnsuppressAlarm(quint32 tagId);
+
+    /// 设备停用（ISA-18.2 Out-of-Service）
+    void onSetOutOfService(quint32 tagId);
+
+    /// 恢复服务
+    void onReturnToService(quint32 tagId);
+
+    /// 添加操作员注释（ISA-18.2 Operator Annotation）
+    void onAnnotateAlarm(const QString& alarmId);
+
+    /// 确认恢复报警（RTN Unack → Normal）
+    void onAcknowledgeReturnToNormal(const QString& alarmId);
+
+    /// KPI仪表盘刷新
+    void onRefreshKpiDashboard();
+
 private:
     void setupMenuBar();
     void setupToolBar();
@@ -113,6 +149,38 @@ private:
     void rebuildDeviceTree();
     void updateDeviceValues();
 
+    // === ISA-18.2 UI 方法 ===
+
+    /// 构建报警过滤工具栏
+    void setupAlarmFilterBar();
+
+    /// 构建KPI仪表盘页面
+    QWidget* createKpiDashboardPage();
+
+    /// 构建变更日志查看页面
+    QWidget* createChangeLogPage();
+
+    /// 刷新报警汇总列表（按过滤条件）
+    void refreshAlarmSummary();
+
+    /// 刷新变更日志列表
+    void refreshChangeLog();
+
+    /// 获取报警状态显示文本
+    QString alarmStateText(AlarmState state) const;
+
+    /// 获取优先级显示文本
+    QString priorityText(AlarmPriority priority) const;
+
+    /// 获取报警限值显示文本
+    QString limitText(AlarmLimit limit) const;
+
+    /// 获取报警分类显示文本
+    QString classificationText(AlarmClassification cls) const;
+
+    /// 获取报警状态背景色
+    QColor alarmStateColor(AlarmState state) const;
+
     Ui::MYDSCProjectClass ui;
 
     // ==== 核心引擎 ====
@@ -129,13 +197,42 @@ private:
     QSlider* m_zoomSlider = nullptr;
     QLabel* m_zoomLabel = nullptr;
 
+    // ==== ISA-18.2 KPI 仪表盘 ====
+    QWidget* m_kpiPage = nullptr;
+    QLabel* m_kpiHealthScore = nullptr;
+    QProgressBar* m_kpiHealthBar = nullptr;
+    QLabel* m_kpiHealthGrade = nullptr;
+    QLabel* m_kpiAlarmRate10min = nullptr;
+    QLabel* m_kpiAvgPerHour = nullptr;
+    QLabel* m_kpiPeakRate = nullptr;
+    QLabel* m_kpiStalePercent = nullptr;
+    QLabel* m_kpiFloodCount = nullptr;
+    QLabel* m_kpiChatteringCount = nullptr;
+    QLabel* m_kpiTop5Frequent = nullptr;
+    QLabel* m_kpiCriticalCount = nullptr;
+    QLabel* m_kpiMajorCount = nullptr;
+    QLabel* m_kpiMinorCount = nullptr;
+    QLabel* m_kpiAdvisoryCount = nullptr;
+    QLabel* m_kpiShelvedCount = nullptr;
+    QLabel* m_kpiSuppressedCount = nullptr;
+
+    // ==== ISA-18.2 变更日志 ====
+    QWidget* m_changeLogPage = nullptr;
+    QTableWidget* m_changeLogTable = nullptr;
+
     // ==== 左侧面板 ====
     QDockWidget* m_leftDock = nullptr;
     QTreeWidget* m_deviceTree = nullptr;
 
-    // ==== 右侧面板 ====
+    // ==== 右侧面板（ISA-18.2 增强） ====
     QDockWidget* m_rightDock = nullptr;
     QTableWidget* m_alarmTable = nullptr;
+    QWidget* m_alarmFilterBar = nullptr;
+    QComboBox* m_filterPriority = nullptr;
+    QComboBox* m_filterState = nullptr;
+    QComboBox* m_filterClassification = nullptr;
+    QComboBox* m_filterArea = nullptr;
+    QComboBox* m_filterLimit = nullptr;
 
     // ==== 底部报警条 ====
     QLabel* m_alarmBar = nullptr;
@@ -157,6 +254,7 @@ private:
     // ==== 定时器 ====
     QTimer* m_refreshTimer = nullptr;
     QTimer* m_demoTimer = nullptr;
+    QTimer* m_kpiRefreshTimer = nullptr;
 
     // ==== 状态 ====
     bool m_soundEnabled = true;

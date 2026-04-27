@@ -8,7 +8,7 @@
 #include <QJsonArray>
 #include <QFile>
 #include "TagDef.h"
-#include "RealtimeDb.h"
+#include "TagConfigMgr.h"
 #include "lockFreeRingBuffer.h"
 #include "DoubleBuffer.h"
 #include "ModbusManager.h"
@@ -37,7 +37,7 @@
  * 2. 无锁队列：MPSC无锁循环队列替代信号槽，减少跨线程开销
  * 3. 独立解析线程：DataParseThread负责数据解析和报警判断
  * 4. 双缓冲区：读写频率解耦，UI线程无锁读取
- * 5. 纯内存存储：实时数据使用QHash + QReadWriteLock，零延迟读写
+ * 5. 纯内存存储：实时数据在DoubleBuffer中，无锁读取；30分钟环形缓存供趋势查询
  *
  * 踩坑经验：
  * - DataEngine本身运行在主线程，但不再做数据处理
@@ -110,11 +110,6 @@ public:
      * @brief 获取ModbusManager引用
      */
     ModbusManager* modbusManager() { return m_modbusManager; }
-
-    /**
-     * @brief 获取实时数据库引用（兼容旧接口）
-     */
-    RealtimeDb& realtimeDb() { return RealtimeDb::instance(); }
 
 signals:
     /**

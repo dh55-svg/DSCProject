@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(where msbuild *)",
+      "Bash(where MSBuild)",
+      "Bash(where qmake *)",
+      "Bash(where cmake *)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Program Files \\(x86\\)/Microsoft Visual Studio/**)",
+      "Bash(/C/Qt/6.5.3/mingw_64/bin/qmake -project -o MYDSCProject.pro)",
+      "Bash(/C/Qt/6.5.3/mingw_64/bin/g++ -std=c++17 -fsyntax-only -I\"C:/qtrpoject/MYDSCProject/MYDSCProject\" -I\"C:/Qt/6.5.3/mingw_64/include\" -I\"C:/Qt/6.5.3/mingw_64/include/QtCore\" -I\"C:/Qt/6.5.3/mingw_64/include/QtMultimedia\" -I\"C:/Qt/6.5.3/mingw_64/include/QtSql\" \"C:/qtrpoject/MYDSCProject/MYDSCProject/AlarmEngine.h\")",
+      "Bash(ls *.pro)",
+      "Bash(ls CMakeLists.txt)"
+    ]
+  }
+}

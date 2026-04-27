@@ -144,7 +144,7 @@ void TankItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
 
 void TankItem::updateAppearance() {
     // 根据绑定位号的当前值计算液位百分比
-    TagInfo tag = RealtimeDb::instance().getTag(m_tagId);
+    TagInfo tag = TagConfigMgr::instance().getTag(m_tagId);
     if (tag.tagId != 0) {
         float range = tag.engHigh - tag.engLow;
         if (range > 0.0f) {

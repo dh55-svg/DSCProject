@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "export.h"
 #include <qthread.h>
 #include <QAtomicInt>
@@ -16,8 +16,9 @@
  * 1. 从无锁循环队列中读取多个Modbus设备的原始数据
  * 2. 将寄存器原始值转换为工程值（量程转换）
  * 3. 执行报警判断（含死区处理）
- * 4. 将处理后的数据写入双缓冲区
- * 5. 定期交换双缓冲区，让UI线程读取最新数据
+ * 4. 变化率校验（防跳变）
+ * 5. 将处理后的数据写入双缓冲区
+ * 6. 定期交换双缓冲区，让UI线程读取最新数据
  *
  * 数据流：
  * ┌─────────────────┐     ┌──────────────────┐     ┌──────────────┐
@@ -101,6 +102,7 @@ public:
 	 */
 	qint64 totalProcessed() const { return m_totalProcessed.loadRelaxed(); }
 	qint64 totalAlarms() const { return m_totalAlarms.loadRelaxed(); }
+	qint64 totalJumpDetected() const { return m_totalJumpDetected.loadRelaxed(); }
 
 signals:
 	/**
@@ -146,31 +148,92 @@ private:
 
 	/**
 	 * @brief 优化的报警判断（直接传入TagInfo，避免重复查找）
+	 *
+	 * ISA-18.2 商业化增强版，覆盖6种报警类型：
+	 * 1. HighHigh / High / Low / LowLow 限值报警
+	 * 2. 偏差报警（|PV-SP| > deviationLimit）
+	 * 3. 变化率报警（值变化速率 > rateOfChangeLimit）
 	 */
 	void checkAlarmOptimized(const TagInfo& tag, float value);
+
+	/**
+	 * @brief 偏差报警检查（ISA-18.2 Deviation Alarm）
+	 *
+	 * 当实际值与设定值偏差超过限值时触发。
+	 * 典型场景：PID控制回路输出偏差过大。
+	 *
+	 * @param tag   位号信息（含 deviationLimit, deviationEnabled, setPoint）
+	 * @param value 当前过程值
+	 */
+	void checkDeviationAlarm(const TagInfo& tag, float value);
+
+	/**
+	 * @brief 变化率报警检查（ISA-18.2 Rate-of-Change Alarm）
+	 *
+	 * 当值的变化速率超过限值时触发。
+	 * 典型场景：温度骤升、压力突降等异常工况。
+	 *
+	 * 注意：此方法与 validateRateOfChange 不同：
+	 * - validateRateOfChange: 数据质量校验，过滤噪声/跳变
+	 * - checkRateOfChangeAlarm: 工艺报警，检测真实异常变化率
+	 *
+	 * @param tag       位号信息（含 rateOfChangeLimit, rateOfChangeEnabled, rateOfChangePeriodMs）
+	 * @param value     当前过程值
+	 * @param timestamp 当前时间戳
+	 */
+	void checkRateOfChangeAlarm(const TagInfo& tag, float value, qint64 timestamp);
 
 	/**
 	 * @brief 处理设备断线（将该设备所有位号质量码标记为Bad）
 	 */
 	void markDeviceBad(int deviceId);
 
+	/**
+	 * @brief 变化率校验，检测异常跳变（数据质量校验，非报警）
+	 * @return true 通过校验，false 异常跳变
+	 */
+	bool validateRateOfChange(quint32 tagId, float value, const TagInfo& tag,
+	                          qint64 timestamp, DataQuality& outQuality);
+
 	// 外部组件引用（不拥有）
 	LockFreeRingBuffer<RawModbusData, 8192>* m_ringBuffer = nullptr;
 	DoubleBuffer* m_doubleBuffer = nullptr;
 
 	// 位号配置（按serverAddress+regAddr索引，加速查找）
-	QHash<quint64, TagInfo> m_tagByRegAddr;  // key = (serverAddr << 32) | regAddr
-	QHash<int, QVector<quint32>> m_tagsByDevice;  // deviceId -> tagId列表
+	QHash<quint64, TagInfo> m_tagByRegAddr;  // key = (serverAddr << 32) | regAddr 按寄存器地址索引（用于快速查找位号信息）
+	QHash<int, QVector<quint32>> m_tagsByDevice;  // deviceId -> tagId列表 按设备地址索引（用于设备管理和批量操作）
 
 	// 运行控制
 	QAtomicInt m_running;
-	int m_processInterval = 20;   // 处理间隔（毫秒）
+	int m_processInterval = 20;   // 处理间隔（毫秒）设置从队列中读取和处理数据的间隔时间（毫秒）
 	int m_swapInterval = 50;      // 双缓冲区交换间隔（毫秒）
 
 	// 报警死区状态记录
 	QHash<quint32, bool> m_inDeadband;
 
+	// 偏差报警状态记录（跟踪偏差报警是否已触发）
+	QHash<quint32, bool> m_deviationAlarmActive;
+
+	// 变化率报警状态记录（跟踪变化率报警是否已触发）
+	struct RateOfChangeAlarmState {
+		float   lastValue = 0.0f;          // 上一次采样值
+		qint64  lastTimestamp = 0;          // 上一次采样时间戳
+		bool    alarmActive = false;        // 变化率报警是否活跃
+		float   peakRate = 0.0f;           // 周期内峰值变化率
+	};
+	QHash<quint32, RateOfChangeAlarmState> m_rocAlarmState;
+
+	// 变化率校验（防跳变，数据质量用）
+	struct RocEntry {
+		float lastValidValue = 0.0f;
+		qint64 lastTimestamp = 0;
+	};
+	QHash<quint32, RocEntry> m_rocState;
+
 	// 统计
 	QAtomicInt m_totalProcessed;
 	QAtomicInt m_totalAlarms;
+	QAtomicInt m_totalJumpDetected;
+	QAtomicInt m_totalDeviationAlarms;     // 偏差报警计数
+	QAtomicInt m_totalRocAlarms;           // 变化率报警计数
 };

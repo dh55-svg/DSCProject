@@ -119,7 +119,6 @@
     <QtMoc Include="DatabaseManager.h" />
     <QtMoc Include="DataEngine.h" />
     <ClInclude Include="export.h" />
-    <QtMoc Include="RealtimeDb.h" />
     <QtMoc Include="TagConfigMgr.h" />
     <QtMoc Include="HistoryArchiveThread.h" />
     <QtMoc Include="PidScene.h" />
@@ -169,7 +168,6 @@
     </ClCompile>
     <ClCompile Include="PumpItem.cpp" />
     <ClCompile Include="DataLabelItem.cpp" />
-    <ClCompile Include="RealtimeDb.cpp" />
     <ClCompile Include="SystemHealthMonitor.cpp" />
     <ClCompile Include="TagConfigMgr.cpp" />
     <ClCompile Include="DataParseThread.cpp" />

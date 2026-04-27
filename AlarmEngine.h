@@ -3,7 +3,7 @@
 #include "TagDef.h"
 #include <QObject>
 #include <QTimer>
-#include <QMap>
+#include <QHash>
 #include <QList>
 #include <QMutex>
 #include <QDateTime>
@@ -13,39 +13,58 @@
 #include "AlarmKpiMonitor.h"
 #include "AlarmChangeLog.h"
 
+class DoubleBuffer;
+
 // ============================================================
-// ISA-18.2 核心报警引擎
+// ISA-18.2 商业化报警引擎（完整版）
 // ============================================================
 
 /**
- * @brief ISA-18.2 报警引擎（完整实现）
+ * @brief ISA-18.2 商业化报警引擎
  *
- * 覆盖 ISA-18.2 成熟度模型 Level 1-4：
+ * 覆盖 ISA-18.2 成熟度模型 Level 1-4 + 商业化增强：
  *
  * Level 1 - 技术实现：
- *   - 5 状态机（Normal / ActiveUnack / ActiveAck / RTNUnack / RTNAck）
- *   - On-Delay 定时器（值持续超限才触发，防噪声尖峰）
+ *   - 7 状态机（Normal / ActiveUnack / ActiveAck / RTNUnack / RTNAck / Shelved / Suppressed / OOS）
+ *   - On-Delay 触发延时（值持续超限才触发，防噪声尖峰）
+ *   - Off-Delay 恢复延时（值回正常后延迟确认恢复，防抖动）
  *   - 死区滞环（Deadband，值回正常需越过死区）
  *   - 报警升级（Low → High 等）
  *   - 报警去重（已有活跃报警不重复触发）
+ *   - 重复报警保护（Chattering Protection，自动屏蔽震荡报警）
  *
  * Level 2 - Rationalization：
  *   - 4 级优先级（Critical/Major/Minor/Advisory）
- *   - 5 种分类（Process/Safety/Enviro/Quality/Machinery）
+ *   - 7 种分类（Process/Safety/Enviro/Quality/Machinery/Electrical/Instrument）
  *   - Shelving（操作员临时屏蔽，自动恢复）
+ *   - Suppression-by-Design（设计抑制，工程师审批）
+ *   - Out-of-Service（设备停用，关联工单）
+ *   - 操作员注释（Operator Annotation）
  *   - 后果记录+操作指南（AlarmRationalization）
+ *   - 报警区域/分区管理
  *
- * Level 3 - KPI 监控：
+ * Level 3 - KPI 监控（EEMUA 191）：
  *   - 滑动窗口 10 分钟报警率
  *   - 平均报警率/小时
  *   - 高峰报警率
  *   - 陈旧报警检测（>30min 未确认）
+ *   - 报警泛滥事件检测与记录
+ *   - 震荡报警检测
  *   - Top-N 最频繁报警
+ *   - 系统健康度评分（A/B/C/D/F）
  *
  * Level 4 - 变更管理：
  *   - 参数变更全记录（谁/何时/改什么/为什么/谁审批）
+ *   - 审批流程（待审批→已审批/已驳回）
+ *   - 临时修改自动恢复
  *   - 审计报告导出
- *   - 审批流程
+ *
+ * 商业化增强：
+ *   - 报警过滤（按优先级/分类/区域/状态/时间/关键字）
+ *   - 报警通知策略（声光/寻呼/邮件/升级）
+ *   - 报警泛滥保护（Flood Protection）
+ *   - 偏差报警 / 变化率报警
+ *   - 报警历史持久化到数据库
  *
  * 线程安全：所有 public 方法使用 QMutex 保护
  */
@@ -57,6 +76,9 @@ public:
     /// 初始化报警引擎（加载音频、启动 KPI 定时器）
     void initialize();
 
+    /// 设置 DoubleBuffer 引用（用于条件抑制规则评估）
+    void setDoubleBuffer(DoubleBuffer* buffer) { m_doubleBuffer = buffer; }
+
     // ============================================================
     // Level 1: 报警触发与状态管理
     // ============================================================
@@ -64,18 +86,14 @@ public:
     /**
      * @brief 触发报警（ISA-18.2 Level 1）
      *
-     * @param tagId      位号ID
-     * @param limit      超限等级 HH/H/L/LL
-     * @param triggerValue 当前值
-     * @param thresholdValue 限值
-     * @param priority   报警优先级
-     * @param classification 报警分类
-     *
-     * 状态机逻辑：
-     * - 如果已有同 tagId 报警且 severity 更高 → 升级
-     * - 如果已有同 tagId 报警且 severity 相同 → 忽略（去重）
-     * - 如果已有同 tagId 报警且 severity 更低 → 忽略
-     * - 如果无报警 → 创建新事件，状态=ActiveUnacknowledged
+     * 完整逻辑链：
+     * 1. 检查报警是否启用（alarmEnabled + isLimitEnabled）
+     * 2. 检查是否被抑制（SuppressedByDesign / OutOfService）
+     * 3. 检查是否被屏蔽（Shelved）
+     * 4. 检查重复报警保护（Chattering Protection）
+     * 5. 检查是否已有同 tag 报警 → 升级/去重
+     * 6. 进入 On-Delay 等待
+     * 7. On-Delay 到期 → 创建报警事件
      */
     void triggerAlarm(quint32 tagId,
                       AlarmLimit limit,
@@ -88,44 +106,42 @@ public:
     /**
      * @brief 值回正常（ISA-18.2 Return-to-Normal）
      *
-     * 状态迁移：
-     * - ActiveUnacknowledged → ReturnToNormalUnacknowledged
-     * - ActiveAcknowledged   → ReturnToNormalUnacknowledged
-     *
-     * 不回 Normal！操作员必须确认恢复后才彻底关闭。
+     * 支持 Off-Delay：
+     * - 如果位号配置了 offDelayMs > 0，值回正常后不立即恢复
+     * - 需要值持续在正常范围内 offDelayMs 毫秒后才确认恢复
+     * - 防止信号在限值附近抖动导致频繁报警/恢复
      */
     void clearAlarm(quint32 tagId, float returnValue);
 
     // ============================================================
-    // Level 1: 确认操作
+    // Level 1: 确认操作（含身份绑定 — 不足6修复）
     // ============================================================
 
-    /**
-     * @brief 确认报警（ISA-18.2 Acknowledge）
-     *
-     * ActiveUnacknowledged → ActiveAcknowledged
-     * 报警声音停止，灯从闪烁变常亮。
-     */
+    /// 确认报警（ActiveUnack → ActiveAck）— 旧版兼容
     void acknowledgeAlarm(const QString& alarmId);
 
-    /// 按位号确认
+    /// 确认报警（带操作员身份 — ISA-18.2 要求身份绑定）
+    bool acknowledgeAlarm(const QString& alarmId, const QString& operatorName);
+
+    /// 按位号确认（旧版兼容）
     void acknowledgeAlarmByTagId(quint32 tagId);
+
+    /// 按位号确认（带操作员身份）
+    bool acknowledgeAlarmByTagId(quint32 tagId, const QString& operatorName);
 
     /// 确认所有活跃报警
     void acknowledgeAll();
 
-    /**
-     * @brief 确认恢复（ISA-18.2 Return-to-Normal Acknowledge）
-     *
-     * ReturnToNormalUnacknowledged → Normal（从活跃列表移除）
-     * 操作员确认"我已看到恢复，问题已解决"。
-     */
+    /// 确认所有活跃报警（带操作员身份）
+    void acknowledgeAll(const QString& operatorName);
+
+    /// 确认恢复（RTNUnack → Normal）
     void acknowledgeReturnToNormal(const QString& alarmId);
     void acknowledgeReturnToNormalByTagId(quint32 tagId);
     void acknowledgeAllReturnToNormal();
 
     // ============================================================
-    // Level 2: Shelving（屏蔽/暂停）
+    // Level 2: Shelving（操作员临时屏蔽）
     // ============================================================
 
     /**
@@ -135,10 +151,15 @@ public:
      * 屏蔽到期自动恢复，或操作员手动取消屏蔽。
      *
      * @param tagId      位号ID
-     * @param reason     屏蔽原因
+     * @param reason     屏蔽原因（必须填写）
      * @param durationSec 0=永久  >0=自动恢复秒数
+     * @param user       操作员名称
      */
-    void shelveAlarm(quint32 tagId, const QString& reason, int durationSec = 3600);
+    void shelveAlarm(quint32 tagId, const QString& reason,
+                     int durationSec = 3600, const QString& user = QString());
+
+    /// 便利方法：屏蔽报警（分钟为单位，自动获取当前用户）
+    void shelveAlarm(quint32 tagId, int durationMin);
 
     /// 取消屏蔽
     void unshelveAlarm(quint32 tagId);
@@ -147,24 +168,106 @@ public:
     QList<AlarmEvent> shelvedAlarms() const;
 
     // ============================================================
-    // Level 2: 报警参数动态修改（含变更记录）
+    // Level 2: Suppression-by-Design（设计抑制）
     // ============================================================
 
     /**
-     * @brief 修改报警限值（含变更记录，ISA-18.2 Level 4）
+     * @brief 设计抑制（ISA-18.2 Suppression-by-Design）
+     *
+     * 工程师在 Rationalization 阶段决定此报警无效。
+     * 必须有审批记录，记录在变更日志中。
+     *
+     * @param tagId        位号ID
+     * @param reason       抑制原因（必须填写）
+     * @param user         工程师名称
+     * @param approver     审批人
      */
+    void suppressByDesign(quint32 tagId, const QString& reason,
+                          const QString& user, const QString& approver);
+
+    /// 便利方法：设计抑制（自动获取当前用户）
+    void suppressAlarm(quint32 tagId, const QString& reason);
+
+    /// 取消设计抑制
+    void unsuppressByDesign(quint32 tagId);
+
+    /// 便利方法：取消设计抑制
+    void unsuppressAlarm(quint32 tagId);
+
+    // ============================================================
+    // Level 2: Suppression-by-Condition 条件抑制（商业化增强 — 不足1修复）
+    // ============================================================
+
+    /// 添加条件抑制规则
+    bool addSuppressionRule(const SuppressionRule& rule);
+
+    /// 移除条件抑制规则
+    void removeSuppressionRule(quint32 ruleId);
+
+    /// 启用/禁用规则
+    void setSuppressionRuleEnabled(quint32 ruleId, bool enabled);
+
+    /// 获取所有抑制规则
+    QVector<SuppressionRule> suppressionRules() const;
+
+    /// 评估抑制：检查指定位号是否应被条件抑制
+    bool evaluateSuppression(quint32 tagId) const;
+
+    // ============================================================
+    // Level 2: Out-of-Service（设备停用）
+    // ============================================================
+
+    /**
+     * @brief 设备停用（ISA-18.2 Out-of-Service）
+     *
+     * 设备检修/维护期间，系统级抑制所有相关报警。
+     * 必须关联维护工单号。
+     *
+     * @param tagId        位号ID
+     * @param reason       停用原因
+     * @param user         操作员名称
+     * @param workOrderNo  关联维护工单号
+     */
+    void setOutOfService(quint32 tagId, const QString& reason,
+                         const QString& user, const QString& workOrderNo);
+
+    /// 便利方法：设备停用（自动获取当前用户）
+    void setOutOfService(quint32 tagId, const QString& reason);
+
+    /// 恢复服务
+    void returnToService(quint32 tagId);
+
+    // ============================================================
+    // Level 2: 操作员注释
+    // ============================================================
+
+    /**
+     * @brief 添加操作员注释（ISA-18.2 Operator Annotation）
+     *
+     * 操作员可以对报警添加注释，记录处理过程。
+     * 所有注释记录在审计日志中。
+     */
+    void annotateAlarm(const QString& alarmId, const QString& annotation,
+                       const QString& user);
+
+    /// 便利方法：添加操作员注释（自动获取当前用户）
+    void annotateAlarm(const QString& alarmId, const QString& annotation);
+
+    // ============================================================
+    // Level 2: 报警参数动态修改（含变更记录）
+    // ============================================================
+
+    /// 修改报警限值（含变更记录，ISA-18.2 Level 4）
     bool setAlarmLimit(quint32 tagId, const QString& fieldName,
                        float newValue, const QString& operatorName,
                        const QString& reason);
 
-    /**
-     * @brief 修改报警优先级（含变更记录）
-     */
+    /// 修改报警优先级（含变更记录）
     bool setAlarmPriority(quint32 tagId, AlarmPriority newPriority,
                           const QString& operatorName, const QString& reason);
 
     // ============================================================
-    // Level 1-2: 查询接口
+    // Level 2: 报警过滤与查询
     // ============================================================
 
     /// 所有活跃报警（Active + RTN Unack/Ack）
@@ -179,6 +282,9 @@ public:
     /// 报警历史（最多 limit 条）
     QList<AlarmEvent> alarmHistory(int limit = 1000) const;
 
+    /// 按过滤条件查询报警（ISA-18.2 报警汇总）
+    QList<AlarmEvent> filteredAlarms(const AlarmFilter& filter) const;
+
     /// 按严重程度分类计数
     int activeAlarmCount() const;
     int activeAlarmCount(AlarmLimit limit) const;
@@ -187,11 +293,32 @@ public:
     /// 未确认报警数
     int unacknowledgedCount() const;
 
+    /// 被抑制报警数
+    int suppressedCount() const;
+
+    /// 被停用报警数
+    int outOfServiceCount() const;
+
+    /// 获取所有区域列表
+    QStringList areas() const;
+
+    /// 按区域获取报警
+    QList<AlarmEvent> alarmsByArea(const QString& area) const;
+
     // ============================================================
     // Level 3: KPI 访问
     // ============================================================
 
     AlarmKpiMonitor* kpiMonitor() { return &m_kpiMonitor; }
+
+    /// 便利方法：获取当前 KPI 快照
+    AlarmKpiSnapshot kpiSnapshot() const;
+
+    /// 便利方法：获取 Top-N 频发报警（返回 tagId → 触发次数）
+    QVector<QPair<quint32, int>> topFrequentAlarms(int topN = 5) const;
+
+    /// 获取报警泛滥事件列表
+    QVector<AlarmFloodEvent> floodEvents() const;
 
     // ============================================================
     // Level 4: 变更日志访问
@@ -233,6 +360,18 @@ signals:
     /// 报警取消屏蔽
     void alarmUnshelved(quint32 tagId);
 
+    /// 报警设计抑制
+    void alarmSuppressed(quint32 tagId, const QString& reason);
+
+    /// 报警取消抑制
+    void alarmUnsuppressed(quint32 tagId);
+
+    /// 报警停用
+    void alarmOutOfService(quint32 tagId, const QString& reason);
+
+    /// 报警恢复服务
+    void alarmReturnedToService(quint32 tagId);
+
     /// 报警升级（从低限值升到高限值）
     void alarmEscalated(quint32 tagId, AlarmLimit oldLimit, AlarmLimit newLimit);
 
@@ -240,12 +379,21 @@ signals:
     void alarmParameterChanged(quint32 tagId, const QString& fieldName,
                                const QString& oldValue, const QString& newValue);
 
+    /// 操作员注释添加
+    void alarmAnnotated(const QString& alarmId, const QString& annotation);
+
+    /// 重复报警保护触发（自动屏蔽震荡报警）
+    void chatteringAlarmDetected(quint32 tagId, int repeatCount);
+
     // ============================================================
     // Level 3: KPI 信号
     // ============================================================
 
     /// 活跃报警数变化（标题栏/状态栏更新用）
     void alarmCountChanged(int activeCount, int unackCount);
+
+    /// 报警泛滥事件
+    void alarmFloodDetected(const AlarmFloodEvent& floodEvent);
 
     // ============================================================
     // Level 4: 变更审计信号
@@ -269,7 +417,11 @@ private:
     /// 根据优先级获取声音文件路径
     QString soundPathForPriority(AlarmPriority priority) const;
 
-    // 启动屏蔽到期检查定时器
+    /// 检查重复报警保护（Chattering Protection）
+    /// @return true=应屏蔽此报警（重复过多）
+    bool checkChattering(quint32 tagId);
+
+    /// 启动屏蔽到期检查定时器
     void startShelveTimer();
 
     /// on-delay 定时器超时 → 实际触发报警
@@ -278,15 +430,21 @@ private:
                           AlarmPriority priority,
                           AlarmClassification classification);
 
+    /// off-delay 定时器超时 → 确认恢复
+    void onOffDelayTimeout(quint32 tagId, float returnValue);
+
     /// 屏蔽到期
     void onShelveTimeout(quint32 tagId);
 
     /// 发送报警声音
     void playAlarmSound(AlarmPriority priority);
 
+    /// 检测报警泛滥事件
+    void checkFloodCondition();
+
     // === 存储 ===
-    QMap<quint32, AlarmEvent> m_activeAlarms;     // 活跃报警（含 RTN 状态）
-    QList<AlarmEvent>         m_alarmHistory;      // 历史记录（上限 2000）
+    QHash<quint32, AlarmEvent> m_activeAlarms;     // 活跃报警（含 RTN/Suppressed/OOS 状态）
+    QList<AlarmEvent>         m_alarmHistory;      // 历史记录（上限 5000）
 
     // === On-Delay 定时器跟踪 ===
     struct OnDelayEntry {
@@ -298,12 +456,43 @@ private:
         int        onDelayMs = 3000;
         QElapsedTimer elapsed;
     };
-    QMap<quint32, OnDelayEntry> m_onDelayEntries;
+    QHash<quint32, OnDelayEntry> m_onDelayEntries;
     QTimer* m_onDelayTimer = nullptr;
 
+    // === Off-Delay 定时器跟踪 ===
+    struct OffDelayEntry {
+        float      returnValue;
+        int        offDelayMs = 0;
+        QElapsedTimer elapsed;
+    };
+    QHash<quint32, OffDelayEntry> m_offDelayEntries;
+    QTimer* m_offDelayTimer = nullptr;
+
     // === Shelve 定时器跟踪 ===
-    QMap<quint32, qint64> m_shelveDeadlines;
+    QHash<quint32, qint64> m_shelveDeadlines;
     QTimer* m_shelveCheckTimer = nullptr;
+
+    // === 重复报警保护跟踪 ===
+    struct ChatteringState {
+        int       count = 0;           // 1分钟内重复次数
+        qint64    windowStart = 0;     // 窗口起始时间
+        bool      autoShelved = false; // 是否已自动屏蔽
+    };
+    QHash<quint32, ChatteringState> m_chatteringState;
+
+    // === 报警泛滥事件跟踪 ===
+    QVector<AlarmFloodEvent> m_floodEvents;
+    qint64 m_floodWindowStart = 0;     // 当前泛滥窗口起始时间
+    int    m_floodWindowCount = 0;      // 当前10分钟窗口内报警数
+    bool   m_inFlood = false;           // 是否处于泛滥状态
+
+    // === 泛滥期间自动抑制跟踪（商业化增强 — 不足3修复） ===
+    QHash<quint32, AlarmState> m_floodSuppressedAlarms;  // 泛滥期间被抑制的报警（tagId → 原状态）
+    static constexpr int FLOOD_THRESHOLD = 10;           // 洪水阈值（10分钟内报警数）
+
+    // === 条件抑制规则存储（商业化增强 — 不足1修复） ===
+    QVector<SuppressionRule> m_suppressionRules;
+    mutable QMutex m_suppressionMutex;
 
     // === 音频 ===
     QSoundEffect* m_soundCritical = nullptr;
@@ -315,8 +504,19 @@ private:
     AlarmKpiMonitor m_kpiMonitor;
     AlarmChangeLog  m_changeLog;
 
+    // === DoubleBuffer 引用（条件抑制规则评估用） ===
+    DoubleBuffer* m_doubleBuffer = nullptr;
+
+    // === 外部统计值（由 checkFloodCondition 等方法使用） ===
+    int m_externalTotalActive = 0;
+    int m_externalStaleCount = 0;
+    int m_externalShelvedCount = 0;
+
     // === ID 生成 ===
     int m_alarmCounter = 0;
+
+    // === KPI 持久化（不足7修复） ===
+    qint64 m_lastKpiSaveTime = 0;          // 上次保存KPI快照的时间戳
 
     // === 互斥 ===
     mutable QMutex m_mutex;

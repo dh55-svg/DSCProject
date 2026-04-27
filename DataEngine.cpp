@@ -47,10 +47,6 @@ bool DataEngine::initialize()
 
     LOG_INFO("DataEngine", "DataParseThread创建完成");
 
-    // 连接RealtimeDb和DoubleBuffer
-    RealtimeDb::instance().setDoubleBuffer(&m_doubleBuffer);
-    LOG_INFO("DataEngine", "RealtimeDb已绑定DoubleBuffer");
-
     m_initialized = true;
     LOG_INFO("DataEngine", "========== 数据引擎初始化完成 ==========");
     return true;
@@ -171,6 +167,7 @@ bool DataEngine::loadTagConfig(const QString& jsonPath)
             tag.lowLimit = qMax(tag.lowLimit, tag.lowLowLimit);
         }
         // Modbus映射验证
+        tag.modbusDeviceId   = obj["modbusDeviceId"].toInt(0);
         tag.modbusServerAddr = obj["modbusServerAddr"].toInt(1);
         tag.modbusRegAddr = obj["modbusRegAddr"].toInt(0);
         tag.modbusRegCount = obj["modbusRegCount"].toInt(1);
@@ -213,8 +210,8 @@ bool DataEngine::loadTagConfig(const QString& jsonPath)
                 tag.kd = qMax(0.0f, tag.kd);
             }
         }
-        // 同时添加到RealtimeDb（兼容旧接口）
-        RealtimeDb::instance().addTag(tag);
+        // 添加到TagConfigMgr
+        TagConfigMgr::instance().addTag(tag);
 
         tagList.append(tag);
     }
@@ -281,26 +278,45 @@ void DataEngine::setSetPoint(quint32 tagId, float sp)
         LOG_WARN("DataEngine", "权限不足: 需要操作员权限才能修改设定值");
         return;
     }
-    TagInfo tag = RealtimeDb::instance().getTag(tagId);
+    TagInfo tag = TagConfigMgr::instance().getTag(tagId);
     if (tag.tagId == 0)
     {
         LOG_WARN("DataEngine", QString("无效的位号ID: %1").arg(tagId));
         return;
     }
-    sp = qBound(tag.engLow, sp, tag.engHigh);  // 修复：参数顺序 engLow <= sp <= engHigh
-    RealtimeDb::instance().updateSetPoint(tagId, sp);
+    sp = qBound(tag.engLow, sp, tag.engHigh);
+
+    // 二次确认（关键操作）
+    float currentSp = tag.setPoint;
+    if (!AuthManager::instance().confirmCriticalAction("SET_SP",
+            QString("位号 %1 设定值 %2 → %3 %4")
+                .arg(tag.tagName).arg(currentSp, 0, 'f', 1)
+                .arg(sp, 0, 'f', 1).arg(tag.unit))) {
+        return;
+    }
+
+    // 直接写入 DoubleBuffer
+    auto snapshot = m_doubleBuffer.readTag(tagId);
+    snapshot.setPoint = sp;
+    m_doubleBuffer.write(tagId, snapshot);
+
     if (m_modbusManager)
     {
-        // 将设定值转换为寄存器值
         float range = tag.engHigh - tag.engLow;
         float normalized = (sp - tag.engLow) / range;
         normalized = qBound(0.0f, normalized, 1.0f);
         quint16 regValue = static_cast<quint16>(normalized * 65535.0f);
-        // SP通常在PV寄存器的+1偏移位置
-        m_modbusManager->writeRegister(tag.modbusServerAddr,
+        m_modbusManager->writeRegister(tag.modbusDeviceId,
             tag.modbusServerAddr,
             tag.modbusRegAddr + 1,
             regValue);
+
+        AuthManager::instance().logAction("SET_SP",
+            QString("tagId=%1, %2: %3→%4 %5")
+                .arg(tagId).arg(tag.tagName)
+                .arg(currentSp, 0, 'f', 1).arg(sp, 0, 'f', 1)
+                .arg(tag.unit));
+
         LOG_INFO("DataEngine", QString("下发SP: %1 = %2 %3")
             .arg(tag.tagName).arg(sp).arg(tag.unit));
     }
@@ -312,15 +328,25 @@ void DataEngine::setOutput(quint32 tagId, float out)
         LOG_WARN("DataEngine", "权限不足: 需要操作员权限才能修改输出值");
         return;
     }
-    TagInfo tag = RealtimeDb::instance().getTag(tagId);
+    TagInfo tag = TagConfigMgr::instance().getTag(tagId);
     if (tag.tagId == 0) {
         return;
     }
 
-    // 限制OUT范围0~100%
     out = qBound(0.0f, out, 100.0f);
 
-    RealtimeDb::instance().updateOutput(tagId, out);
+    float currentOut = tag.outputValue;
+    if (!AuthManager::instance().confirmCriticalAction("SET_OUT",
+            QString("位号 %1 输出值 %2% → %3%")
+                .arg(tag.tagName).arg(currentOut, 0, 'f', 1)
+                .arg(out, 0, 'f', 1))) {
+        return;
+    }
+
+    // 直接写入 DoubleBuffer
+    auto snapshot = m_doubleBuffer.readTag(tagId);
+    snapshot.outputValue = out;
+    m_doubleBuffer.write(tagId, snapshot);
 
     if (m_modbusManager) {
         float range = tag.engHigh - tag.engLow;
@@ -328,10 +354,15 @@ void DataEngine::setOutput(quint32 tagId, float out)
         normalized = qBound(0.0f, normalized, 1.0f);
         quint16 regValue = static_cast<quint16>(normalized * 65535.0f);
 
-        m_modbusManager->writeRegister(tag.modbusServerAddr,
+        m_modbusManager->writeRegister(tag.modbusDeviceId,
             tag.modbusServerAddr,
             tag.modbusRegAddr + 2,
             regValue);
+
+        AuthManager::instance().logAction("SET_OUT",
+            QString("tagId=%1, %2: OUT=%3%")
+                .arg(tagId).arg(tag.tagName).arg(out, 0, 'f', 1));
+
         LOG_INFO("DataEngine", QString("下发OUT: %1 = %2%")
             .arg(tag.tagName).arg(out));
     }
@@ -343,18 +374,33 @@ void DataEngine::setAutoMode(quint32 tagId, bool autoMode)
         LOG_WARN("DataEngine", "权限不足: 需要操作员权限才能切换自动/手动模式");
         return;
     }
-    TagInfo tag = RealtimeDb::instance().getTag(tagId);
+    TagInfo tag = TagConfigMgr::instance().getTag(tagId);
     if (tag.tagId == 0) {
         return;
+    }
+
+    // 切到手动模式 = 危险操作，ISA-101 要求二次确认
+    if (!autoMode) {
+        if (!AuthManager::instance().confirmCriticalAction("SET_MANUAL_MODE",
+                QString("位号 %1 即将切换到手动模式，操作员可直接控制阀门开度，请确认")
+                    .arg(tag.tagName))) {
+            return;
+        }
     }
 
     if (m_modbusManager)
     {
         quint16 modeValue = autoMode ? 1 : 0;
-        m_modbusManager->writeRegister(tag.modbusServerAddr,
+        m_modbusManager->writeRegister(tag.modbusDeviceId,
             tag.modbusServerAddr,
             tag.modbusRegAddr + 3,
             modeValue);
+
+        AuthManager::instance().logAction(
+            autoMode ? "SET_AUTO_MODE" : "SET_MANUAL_MODE",
+            QString("tagId=%1, %2")
+                .arg(tagId).arg(tag.tagName));
+
         LOG_INFO("DataEngine", QString("切换模式: %1 -> %2")
             .arg(tag.tagName).arg(autoMode ? "AUTO" : "MAN"));
     }
@@ -370,7 +416,12 @@ void DataEngine::onDataUpdated()
 void DataEngine::onAllDevicesOffline()
 {
     // 所有设备离线，将所有位号质量码标记为Bad
-    RealtimeDb::instance().markAllBad();
+    auto allTags = TagConfigMgr::instance().getAllTags();
+    for (const auto& tag : allTags) {
+        auto snapshot = m_doubleBuffer.readTag(tag.tagId);
+        snapshot.quality = DataQuality::Bad;
+        m_doubleBuffer.write(tag.tagId, snapshot);
+    }
     emit commStatusChanged(false);
     LOG_ERROR("DataEngine", "所有通讯设备离线，所有位号质量码已标记为Bad");
 }

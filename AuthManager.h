@@ -46,6 +46,7 @@ public:
     static AuthManager& instance();
 
     void initialize();
+    void shutdown();
 
     // 用户登录/登出
     bool login(const QString& username, const QString& password);

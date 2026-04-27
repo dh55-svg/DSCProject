@@ -1,10 +1,9 @@
-﻿#include "MYDSCProject.h"
+#include "MYDSCProject.h"
 #include "logger.h"
 #include "DatabaseManager.h"
 #include "HistoryArchiveThread.h"
 #include "ConfigManager.h"
 #include "TagConfigMgr.h"
-#include "RealtimeDb.h"
 #include "DoubleBuffer.h"
 
 #include <QApplication>
@@ -23,6 +22,8 @@
 #include <QPrintPreviewDialog>
 #include <QDateTime>
 #include <QInputDialog>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QPushButton>
@@ -58,6 +59,11 @@ MYDSCProject::MYDSCProject(QWidget *parent)
     m_refreshTimer = new QTimer(this);
     connect(m_refreshTimer, &QTimer::timeout, this, &MYDSCProject::onRefreshTimer);
     m_refreshTimer->start(200);
+
+    // ISA-18.2: KPI仪表盘定时刷新（每30秒）
+    m_kpiRefreshTimer = new QTimer(this);
+    connect(m_kpiRefreshTimer, &QTimer::timeout, this, &MYDSCProject::onRefreshKpiDashboard);
+    m_kpiRefreshTimer->start(30000);
 
     LOG_INFO("MainWindow", "DCS主窗口初始化完成");
 }
@@ -275,6 +281,14 @@ void MYDSCProject::setupCentralWidget()
     m_trendWidget = new TrendWidget(this);
     m_centralTabs->addTab(m_trendWidget, QStringLiteral("📈 趋势曲线"));
 
+    // ---- Tab5: ISA-18.2 KPI 仪表盘 ----
+    m_kpiPage = createKpiDashboardPage();
+    m_centralTabs->addTab(m_kpiPage, QStringLiteral("📊 KPI仪表盘"));
+
+    // ---- Tab6: ISA-18.2 变更日志 ----
+    m_changeLogPage = createChangeLogPage();
+    m_centralTabs->addTab(m_changeLogPage, QStringLiteral("📋 变更日志"));
+
     setCentralWidget(m_centralTabs);
 }
 
@@ -295,13 +309,27 @@ void MYDSCProject::setupDockWidgets()
     m_leftDock->setWidget(m_deviceTree);
     addDockWidget(Qt::LeftDockWidgetArea, m_leftDock);
 
-    // ---- 右侧：报警列表 ----
-    m_rightDock = new QDockWidget(QStringLiteral("报警列表"), this);
+    // ---- 右侧：ISA-18.2 报警汇总面板 ----
+    m_rightDock = new QDockWidget(QStringLiteral("报警汇总 (ISA-18.2)"), this);
     m_rightDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    m_alarmTable = new QTableWidget(0, 6, m_rightDock);
+
+    // 报警面板容器（过滤栏 + 报警表格）
+    QWidget* alarmPanel = new QWidget(m_rightDock);
+    QVBoxLayout* alarmLayout = new QVBoxLayout(alarmPanel);
+    alarmLayout->setContentsMargins(0, 0, 0, 0);
+    alarmLayout->setSpacing(0);
+
+    // ISA-18.2 报警过滤工具栏
+    setupAlarmFilterBar();
+    alarmLayout->addWidget(m_alarmFilterBar);
+
+    // ISA-18.2 增强报警表格（10列完整信息）
+    m_alarmTable = new QTableWidget(0, 10, alarmPanel);
     m_alarmTable->setHorizontalHeaderLabels({
-        QStringLiteral("报警ID"), QStringLiteral("位号"), QStringLiteral("级别"),
-        QStringLiteral("当前值"), QStringLiteral("限值"), QStringLiteral("时间")
+        QStringLiteral("报警ID"), QStringLiteral("位号"), QStringLiteral("限值"),
+        QStringLiteral("优先级"), QStringLiteral("分类"), QStringLiteral("状态"),
+        QStringLiteral("当前值"), QStringLiteral("限值"), QStringLiteral("区域"),
+        QStringLiteral("触发时间")
     });
     m_alarmTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_alarmTable->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -309,13 +337,19 @@ void MYDSCProject::setupDockWidgets()
     m_alarmTable->setAlternatingRowColors(true);
     m_alarmTable->horizontalHeader()->setStretchLastSection(true);
     m_alarmTable->verticalHeader()->setVisible(false);
-    m_alarmTable->setColumnWidth(0, 160);
-    m_alarmTable->setColumnWidth(1, 80);
-    m_alarmTable->setColumnWidth(2, 60);
-    m_alarmTable->setColumnWidth(3, 70);
-    m_alarmTable->setColumnWidth(4, 70);
+    m_alarmTable->setColumnWidth(0, 140);
+    m_alarmTable->setColumnWidth(1, 70);
+    m_alarmTable->setColumnWidth(2, 50);
+    m_alarmTable->setColumnWidth(3, 55);
+    m_alarmTable->setColumnWidth(4, 55);
+    m_alarmTable->setColumnWidth(5, 65);
+    m_alarmTable->setColumnWidth(6, 60);
+    m_alarmTable->setColumnWidth(7, 60);
+    m_alarmTable->setColumnWidth(8, 65);
     m_alarmTable->setContextMenuPolicy(Qt::CustomContextMenu);
-    m_rightDock->setWidget(m_alarmTable);
+    alarmLayout->addWidget(m_alarmTable);
+
+    m_rightDock->setWidget(alarmPanel);
     addDockWidget(Qt::RightDockWidgetArea, m_rightDock);
 }
 
@@ -413,6 +447,13 @@ void MYDSCProject::onRefreshTimer()
     updateDeviceTree();
     if (m_demoMode) {
         updatePidItems();
+    }
+
+    // ISA-18.2: 定期刷新报警汇总（过滤后的活跃报警列表）
+    static int refreshCounter = 0;
+    if (++refreshCounter >= 5) {
+        refreshCounter = 0;
+        refreshAlarmSummary();
     }
 }
 
@@ -597,19 +638,11 @@ void MYDSCProject::onAlarmTriggered(quint32 tagId, AlarmLimit state, float value
 {
     m_totalAlarms = AlarmEngine::instance().activeAlarmCount();
 
-    // 添加到报警表格顶部
-    m_alarmTable->insertRow(0);
-    QString severityStr;
-    switch (state) {
-    case AlarmLimit::HighHigh: severityStr = "HH"; break;
-    case AlarmLimit::High:     severityStr = "H";  break;
-    case AlarmLimit::LowLow:   severityStr = "LL"; break;
-    case AlarmLimit::Low:      severityStr = "L";  break;
-    default:                   severityStr = "?";  break;
-    }
+    // 查询完整的报警事件（从AlarmEngine获取ISA-18.2全字段）
+    AlarmEvent alarmEvent = AlarmEngine::instance().alarmByTagId(tagId);
 
-    QColor bgColor = (state == AlarmLimit::HighHigh || state == AlarmLimit::LowLow)
-        ? QColor(255, 200, 200) : QColor(255, 230, 200);
+    // 添加到报警表格顶部（10列ISA-18.2完整信息）
+    m_alarmTable->insertRow(0);
 
     // 查询位号名称
     QString tagName = QString::number(tagId);
@@ -618,22 +651,55 @@ void MYDSCProject::onAlarmTriggered(quint32 tagId, AlarmLimit state, float value
         tagName = tagInfo.tagName;
     }
 
-    auto* idItem = new QTableWidgetItem(QString::number(tagId));
+    // 根据报警状态设置行背景色
+    QColor bgColor = alarmStateColor(alarmEvent.state);
+
+    // 列0: 报警ID
+    auto* idItem = new QTableWidgetItem(alarmEvent.alarmId.isEmpty()
+        ? QString::number(tagId) : alarmEvent.alarmId);
     idItem->setData(Qt::UserRole, tagId);
+    idItem->setData(Qt::UserRole + 1, alarmEvent.alarmId);
     idItem->setBackground(bgColor);
     m_alarmTable->setItem(0, 0, idItem);
 
+    // 列1: 位号名
     auto* tagItem = new QTableWidgetItem(tagName);
     tagItem->setBackground(bgColor);
     m_alarmTable->setItem(0, 1, tagItem);
 
-    auto* sevItem = new QTableWidgetItem(severityStr);
-    sevItem->setBackground(bgColor);
-    m_alarmTable->setItem(0, 2, sevItem);
+    // 列2: 限值类型
+    auto* limitItem = new QTableWidgetItem(limitText(alarmEvent.limit));
+    limitItem->setBackground(bgColor);
+    m_alarmTable->setItem(0, 2, limitItem);
 
-    m_alarmTable->setItem(0, 3, new QTableWidgetItem(QString::number(value, 'f', 1)));
-    m_alarmTable->setItem(0, 4, new QTableWidgetItem(QString::number(limit, 'f', 1)));
-    m_alarmTable->setItem(0, 5, new QTableWidgetItem(
+    // 列3: 优先级
+    auto* priItem = new QTableWidgetItem(priorityText(alarmEvent.priority));
+    priItem->setBackground(bgColor);
+    m_alarmTable->setItem(0, 3, priItem);
+
+    // 列4: 分类
+    auto* clsItem = new QTableWidgetItem(classificationText(alarmEvent.classification));
+    clsItem->setBackground(bgColor);
+    m_alarmTable->setItem(0, 4, clsItem);
+
+    // 列5: 状态
+    auto* stateItem = new QTableWidgetItem(alarmStateText(alarmEvent.state));
+    stateItem->setBackground(bgColor);
+    m_alarmTable->setItem(0, 5, stateItem);
+
+    // 列6: 当前值
+    m_alarmTable->setItem(0, 6, new QTableWidgetItem(
+        QString::number(value, 'f', 1)));
+
+    // 列7: 限值
+    m_alarmTable->setItem(0, 7, new QTableWidgetItem(
+        QString::number(limit, 'f', 1)));
+
+    // 列8: 区域
+    m_alarmTable->setItem(0, 8, new QTableWidgetItem(alarmEvent.area));
+
+    // 列9: 触发时间
+    m_alarmTable->setItem(0, 9, new QTableWidgetItem(
         QDateTime::currentDateTime().toString("HH:mm:ss")));
 
     // 限制表格行数
@@ -642,7 +708,7 @@ void MYDSCProject::onAlarmTriggered(quint32 tagId, AlarmLimit state, float value
     }
 
     LOG_WARN("MainWindow", QString("报警: tagId=%1, 级别=%2, 值=%3")
-        .arg(tagId).arg(severityStr).arg(value));
+        .arg(tagId).arg(limitText(alarmEvent.limit)).arg(value));
 }
 
 void MYDSCProject::onAlarmCleared(quint32 tagId)
@@ -812,15 +878,71 @@ void MYDSCProject::onAlarmTableContextMenu(const QPoint& pos)
         "QMenu::item { padding: 6px 20px; border-radius: 3px; }"
         "QMenu::item:selected { background: #1f6feb; }");
 
-    menu.addAction(QStringLiteral("确认报警"), this, [this, row]() {
+    quint32 tagId = m_alarmTable->item(row, 0)->data(Qt::UserRole).toUInt();
+    if (tagId == 0) tagId = m_alarmTable->item(row, 0)->text().toUInt();
+    QString alarmId = m_alarmTable->item(row, 0)->data(Qt::UserRole + 1).toString();
+
+    // 查询当前报警状态
+    AlarmEvent alarmEvent = AlarmEngine::instance().alarmByTagId(tagId);
+
+    // === 基础操作 ===
+    menu.addAction(QStringLiteral("确认报警"), this, [this, row, tagId]() {
         m_alarmTable->selectRow(row);
         onAcknowledgeAlarm();
     });
 
-    quint32 tagId = m_alarmTable->item(row, 0)->data(Qt::UserRole).toUInt();
-    if (tagId == 0) tagId = m_alarmTable->item(row, 0)->text().toUInt();
+    if (alarmEvent.state == AlarmState::ReturnToNormalUnacknowledged) {
+        menu.addAction(QStringLiteral("确认恢复"), this, [this, alarmId]() {
+            onAcknowledgeReturnToNormal(alarmId);
+        });
+    }
 
-    menu.addAction(QStringLiteral("查看趋势"), this, [this, tagId]() {
+    menu.addSeparator();
+
+    // === ISA-18.2 操作员注释 ===
+    menu.addAction(QStringLiteral("📝 添加注释..."), this, [this, alarmId]() {
+        onAnnotateAlarm(alarmId);
+    });
+
+    menu.addSeparator();
+
+    // === ISA-18.2 Shelving（操作员临时屏蔽） ===
+    if (alarmEvent.isShelved()) {
+        menu.addAction(QStringLiteral("🔓 取消屏蔽"), this, [this, tagId]() {
+            onUnshelveAlarm(tagId);
+        });
+    } else if (alarmEvent.isActive() || alarmEvent.state == AlarmState::ReturnToNormalUnacknowledged) {
+        menu.addAction(QStringLiteral("🔇 屏蔽报警..."), this, [this, tagId]() {
+            onShelveAlarm(tagId);
+        });
+    }
+
+    // === ISA-18.2 Suppression-by-Design（设计抑制） ===
+    if (alarmEvent.isSuppressed()) {
+        menu.addAction(QStringLiteral("🔓 取消抑制"), this, [this, tagId]() {
+            onUnsuppressAlarm(tagId);
+        });
+    } else if (AuthManager::instance().hasPermission(UserLevel::Engineer)) {
+        menu.addAction(QStringLiteral("⛔ 设计抑制..."), this, [this, tagId]() {
+            onSuppressAlarm(tagId);
+        });
+    }
+
+    // === ISA-18.2 Out-of-Service（设备停用） ===
+    if (alarmEvent.state == AlarmState::OutOfService) {
+        menu.addAction(QStringLiteral("🔧 恢复服务"), this, [this, tagId]() {
+            onReturnToService(tagId);
+        });
+    } else if (AuthManager::instance().hasPermission(UserLevel::Engineer)) {
+        menu.addAction(QStringLiteral("🔧 设备停用..."), this, [this, tagId]() {
+            onSetOutOfService(tagId);
+        });
+    }
+
+    menu.addSeparator();
+
+    // === 查看趋势 ===
+    menu.addAction(QStringLiteral("📈 查看趋势"), this, [this, tagId]() {
         if (m_trendWidget && tagId != 0) {
             for (int i = 0; i < m_centralTabs->count(); ++i) {
                 if (m_centralTabs->tabText(i).contains(QStringLiteral("趋势"))) {
@@ -829,6 +951,17 @@ void MYDSCProject::onAlarmTableContextMenu(const QPoint& pos)
                 }
             }
         }
+    });
+
+    // === 查看KPI ===
+    menu.addAction(QStringLiteral("📊 查看KPI仪表盘"), this, [this]() {
+        for (int i = 0; i < m_centralTabs->count(); ++i) {
+            if (m_centralTabs->tabText(i).contains(QStringLiteral("KPI"))) {
+                m_centralTabs->setCurrentIndex(i);
+                break;
+            }
+        }
+        onRefreshKpiDashboard();
     });
 
     menu.exec(m_alarmTable->viewport()->mapToGlobal(pos));
@@ -1595,5 +1728,999 @@ void MYDSCProject::onToggleDemo()
         }
         m_actDemo->setText(QStringLiteral(" ▶ 演示 "));
         LOG_INFO("MainWindow", "演示模式已停止");
+    }
+}
+
+// ============================================================
+// ============================================================
+//
+//  ISA-18.2 商业化 UI 增强实现
+//
+//  包含：
+//  1. 报警过滤工具栏（按优先级/状态/分类/区域/限值类型）
+//  2. KPI 仪表盘（EEMUA 191 标准指标）
+//  3. 变更日志查看器（审计追踪）
+//  4. 报警屏蔽/抑制/停用操作
+//  5. 操作员注释对话框
+//  6. 报警状态显示辅助方法
+//
+// ============================================================
+// ============================================================
+
+// ============================================================
+// 报警过滤工具栏
+//
+// ISA-18.2 要求报警汇总支持按多种条件过滤，
+// 帮助操作员在报警洪峰中快速定位关键报警。
+// 过滤维度：
+// - 优先级（Critical/Major/Minor/Advisory）
+// - 报警状态（Active/RTN/Shelved/Suppressed/OOS）
+// - 分类（Process/Safety/Equipment/Environmental）
+// - 区域（按工艺区域划分）
+// - 限值类型（HH/H/L/LL/Deviation/ROC）
+// ============================================================
+void MYDSCProject::setupAlarmFilterBar()
+{
+    m_alarmFilterBar = new QWidget(this);
+    QHBoxLayout* filterLayout = new QHBoxLayout(m_alarmFilterBar);
+    filterLayout->setContentsMargins(4, 2, 4, 2);
+    filterLayout->setSpacing(6);
+
+    // 优先级过滤
+    m_filterPriority = new QComboBox(m_alarmFilterBar);
+    m_filterPriority->addItem(QStringLiteral("全部优先级"), -1);
+    m_filterPriority->addItem(QStringLiteral("Critical"), static_cast<int>(AlarmPriority::Critical));
+    m_filterPriority->addItem(QStringLiteral("Major"), static_cast<int>(AlarmPriority::Major));
+    m_filterPriority->addItem(QStringLiteral("Minor"), static_cast<int>(AlarmPriority::Minor));
+    m_filterPriority->addItem(QStringLiteral("Advisory"), static_cast<int>(AlarmPriority::Advisory));
+    m_filterPriority->setFixedWidth(100);
+    filterLayout->addWidget(new QLabel(QStringLiteral("优先级:"), m_alarmFilterBar));
+    filterLayout->addWidget(m_filterPriority);
+
+    // 报警状态过滤
+    m_filterState = new QComboBox(m_alarmFilterBar);
+    m_filterState->addItem(QStringLiteral("全部状态"), -1);
+    m_filterState->addItem(QStringLiteral("活跃(未确认)"), static_cast<int>(AlarmState::ActiveUnacknowledged));
+    m_filterState->addItem(QStringLiteral("活跃(已确认)"), static_cast<int>(AlarmState::ActiveAcknowledged));
+    m_filterState->addItem(QStringLiteral("恢复(未确认)"), static_cast<int>(AlarmState::ReturnToNormalUnacknowledged));
+    m_filterState->addItem(QStringLiteral("已屏蔽"), static_cast<int>(AlarmState::Shelved));
+    m_filterState->addItem(QStringLiteral("已抑制"), static_cast<int>(AlarmState::SuppressedByDesign));
+    m_filterState->addItem(QStringLiteral("停用"), static_cast<int>(AlarmState::OutOfService));
+    m_filterState->setFixedWidth(120);
+    filterLayout->addWidget(new QLabel(QStringLiteral("状态:"), m_alarmFilterBar));
+    filterLayout->addWidget(m_filterState);
+
+    // 分类过滤
+    m_filterClassification = new QComboBox(m_alarmFilterBar);
+    m_filterClassification->addItem(QStringLiteral("全部分类"), -1);
+    m_filterClassification->addItem(QStringLiteral("工艺"), static_cast<int>(AlarmClassification::Process));
+    m_filterClassification->addItem(QStringLiteral("安全"), static_cast<int>(AlarmClassification::Safety));
+    m_filterClassification->addItem(QStringLiteral("设备"), static_cast<int>(AlarmClassification::Machinery));
+    m_filterClassification->addItem(QStringLiteral("环境"), static_cast<int>(AlarmClassification::Environmental));
+    m_filterClassification->setFixedWidth(80);
+    filterLayout->addWidget(new QLabel(QStringLiteral("分类:"), m_alarmFilterBar));
+    filterLayout->addWidget(m_filterClassification);
+
+    // 区域过滤
+    m_filterArea = new QComboBox(m_alarmFilterBar);
+    m_filterArea->addItem(QStringLiteral("全部区域"), -1);
+    // 动态填充区域列表（从TagConfigMgr获取）
+    auto tags = TagConfigMgr::instance().getAllTags();
+    QSet<QString> areas;
+    for (const auto& tag : tags) {
+        if (!tag.area.isEmpty()) {
+            areas.insert(tag.area);
+        }
+    }
+    for (const auto& area : areas) {
+        m_filterArea->addItem(area, area);
+    }
+    m_filterArea->setFixedWidth(90);
+    filterLayout->addWidget(new QLabel(QStringLiteral("区域:"), m_alarmFilterBar));
+    filterLayout->addWidget(m_filterArea);
+
+    // 限值类型过滤
+    m_filterLimit = new QComboBox(m_alarmFilterBar);
+    m_filterLimit->addItem(QStringLiteral("全部类型"), -1);
+    m_filterLimit->addItem(QStringLiteral("HH"), static_cast<int>(AlarmLimit::HighHigh));
+    m_filterLimit->addItem(QStringLiteral("H"), static_cast<int>(AlarmLimit::High));
+    m_filterLimit->addItem(QStringLiteral("L"), static_cast<int>(AlarmLimit::Low));
+    m_filterLimit->addItem(QStringLiteral("LL"), static_cast<int>(AlarmLimit::LowLow));
+    m_filterLimit->addItem(QStringLiteral("DEV"), static_cast<int>(AlarmLimit::Deviation));
+    m_filterLimit->addItem(QStringLiteral("ROC"), static_cast<int>(AlarmLimit::RateOfChange));
+    m_filterLimit->setFixedWidth(80);
+    filterLayout->addWidget(new QLabel(QStringLiteral("类型:"), m_alarmFilterBar));
+    filterLayout->addWidget(m_filterLimit);
+
+    // 刷新按钮
+    QPushButton* refreshBtn = new QPushButton(QStringLiteral("🔄 刷新"), m_alarmFilterBar);
+    refreshBtn->setFixedWidth(60);
+    filterLayout->addWidget(refreshBtn);
+
+    filterLayout->addStretch();
+
+    // 连接过滤信号
+    connect(m_filterPriority, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MYDSCProject::onAlarmFilterChanged);
+    connect(m_filterState, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MYDSCProject::onAlarmFilterChanged);
+    connect(m_filterClassification, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MYDSCProject::onAlarmFilterChanged);
+    connect(m_filterArea, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MYDSCProject::onAlarmFilterChanged);
+    connect(m_filterLimit, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MYDSCProject::onAlarmFilterChanged);
+    connect(refreshBtn, &QPushButton::clicked, this, &MYDSCProject::refreshAlarmSummary);
+}
+
+// ============================================================
+// 报警过滤条件变更 → 刷新报警汇总
+// ============================================================
+void MYDSCProject::onAlarmFilterChanged()
+{
+    refreshAlarmSummary();
+}
+
+// ============================================================
+// 刷新报警汇总列表（按过滤条件）
+//
+// 从 AlarmEngine 获取所有活跃报警，按过滤条件筛选后
+// 重新填充报警表格。这是 ISA-18.2 报警汇总的核心功能。
+// ============================================================
+void MYDSCProject::refreshAlarmSummary()
+{
+    if (!m_alarmTable) return;
+
+    // 获取过滤条件
+    int priorityFilter = m_filterPriority ? m_filterPriority->currentData().toInt() : -1;
+    int stateFilter = m_filterState ? m_filterState->currentData().toInt() : -1;
+    int classFilter = m_filterClassification ? m_filterClassification->currentData().toInt() : -1;
+    QString areaFilter = m_filterArea ? m_filterArea->currentData().toString() : QString();
+    int limitFilter = m_filterLimit ? m_filterLimit->currentData().toInt() : -1;
+
+    // 获取所有活跃报警
+    auto alarms = AlarmEngine::instance().activeAlarms();
+
+    // 清空表格
+    m_alarmTable->setRowCount(0);
+
+    for (const auto& alarm : alarms) {
+        // 按优先级过滤
+        if (priorityFilter >= 0 && static_cast<int>(alarm.priority) != priorityFilter) continue;
+
+        // 按状态过滤
+        if (stateFilter >= 0 && static_cast<int>(alarm.state) != stateFilter) continue;
+
+        // 按分类过滤
+        if (classFilter >= 0 && static_cast<int>(alarm.classification) != classFilter) continue;
+
+        // 按区域过滤
+        if (!areaFilter.isEmpty() && alarm.area != areaFilter) continue;
+
+        // 按限值类型过滤
+        if (limitFilter >= 0 && static_cast<int>(alarm.limit) != limitFilter) continue;
+
+        // 添加行
+        int row = m_alarmTable->rowCount();
+        m_alarmTable->insertRow(row);
+
+        QColor bgColor = alarmStateColor(alarm.state);
+
+        // 列0: 报警ID
+        auto* idItem = new QTableWidgetItem(alarm.alarmId);
+        idItem->setData(Qt::UserRole, alarm.tagId);
+        idItem->setData(Qt::UserRole + 1, alarm.alarmId);
+        idItem->setBackground(bgColor);
+        m_alarmTable->setItem(row, 0, idItem);
+
+        // 列1: 位号名
+        auto* tagItem = new QTableWidgetItem(alarm.tagName);
+        tagItem->setBackground(bgColor);
+        m_alarmTable->setItem(row, 1, tagItem);
+
+        // 列2: 限值类型
+        auto* limitItem = new QTableWidgetItem(limitText(alarm.limit));
+        limitItem->setBackground(bgColor);
+        m_alarmTable->setItem(row, 2, limitItem);
+
+        // 列3: 优先级
+        auto* priItem = new QTableWidgetItem(priorityText(alarm.priority));
+        priItem->setBackground(bgColor);
+        m_alarmTable->setItem(row, 3, priItem);
+
+        // 列4: 分类
+        auto* clsItem = new QTableWidgetItem(classificationText(alarm.classification));
+        clsItem->setBackground(bgColor);
+        m_alarmTable->setItem(row, 4, clsItem);
+
+        // 列5: 状态
+        auto* stateItem = new QTableWidgetItem(alarmStateText(alarm.state));
+        stateItem->setBackground(bgColor);
+        m_alarmTable->setItem(row, 5, stateItem);
+
+        // 列6: 当前值
+        m_alarmTable->setItem(row, 6, new QTableWidgetItem(
+            QString::number(alarm.triggerValue, 'f', 1)));
+
+        // 列7: 限值
+        m_alarmTable->setItem(row, 7, new QTableWidgetItem(
+            QString::number(alarm.thresholdValue, 'f', 1)));
+
+        // 列8: 区域
+        m_alarmTable->setItem(row, 8, new QTableWidgetItem(alarm.area));
+
+        // 列9: 触发时间
+        m_alarmTable->setItem(row, 9, new QTableWidgetItem(
+            QDateTime::fromMSecsSinceEpoch(alarm.triggerTime).toString("HH:mm:ss")));
+    }
+}
+
+// ============================================================
+// KPI 仪表盘页面
+//
+// 基于 EEMUA 191 标准的报警系统性能指标仪表盘。
+// 核心指标：
+// - 系统健康评分（0-100）
+// - 10分钟报警率（EEMUA 191: ≤10为可管理）
+// - 平均每小时报警率
+// - 峰值报警率
+// - 陈旧报警百分比
+// - 报警洪峰次数
+// - 颤振报警次数
+// - Top5 频发报警
+// - 各优先级分布
+// - 屏蔽/抑制计数
+// ============================================================
+QWidget* MYDSCProject::createKpiDashboardPage()
+{
+    QWidget* page = new QWidget(this);
+    QVBoxLayout* mainLayout = new QVBoxLayout(page);
+    mainLayout->setSpacing(12);
+
+    // ---- 顶部：系统健康评分 ----
+    QGroupBox* healthGroup = new QGroupBox(QStringLiteral("系统健康评分"), page);
+    QHBoxLayout* healthLayout = new QHBoxLayout(healthGroup);
+
+    m_kpiHealthScore = new QLabel(QStringLiteral("--"), page);
+    m_kpiHealthScore->setAlignment(Qt::AlignCenter);
+    m_kpiHealthScore->setStyleSheet(
+        "font-size: 48px; font-weight: bold; color: #4CAF50;");
+
+    m_kpiHealthBar = new QProgressBar(page);
+    m_kpiHealthBar->setRange(0, 100);
+    m_kpiHealthBar->setValue(0);
+    m_kpiHealthBar->setFormat("%v%");
+    m_kpiHealthBar->setFixedHeight(30);
+    m_kpiHealthBar->setStyleSheet(
+        "QProgressBar { border: 1px solid #555; border-radius: 4px; text-align: center; }"
+        "QProgressBar::chunk { background: #4CAF50; border-radius: 3px; }");
+
+    m_kpiHealthGrade = new QLabel(QStringLiteral("等级: --"), page);
+    m_kpiHealthGrade->setStyleSheet("font-size: 18px; font-weight: bold;");
+
+    healthLayout->addWidget(m_kpiHealthScore);
+    healthLayout->addWidget(m_kpiHealthBar, 1);
+    healthLayout->addWidget(m_kpiHealthGrade);
+    mainLayout->addWidget(healthGroup);
+
+    // ---- 中部：核心KPI指标 ----
+    QGroupBox* metricsGroup = new QGroupBox(QStringLiteral("核心KPI指标 (EEMUA 191)"), page);
+    QGridLayout* metricsLayout = new QGridLayout(metricsGroup);
+
+    // 10分钟报警率
+    metricsLayout->addWidget(new QLabel(QStringLiteral("10分钟报警率:"), page), 0, 0);
+    m_kpiAlarmRate10min = new QLabel(QStringLiteral("-- /10min"), page);
+    m_kpiAlarmRate10min->setStyleSheet("font-size: 16px; font-weight: bold;");
+    metricsLayout->addWidget(m_kpiAlarmRate10min, 0, 1);
+
+    // 平均每小时报警率
+    metricsLayout->addWidget(new QLabel(QStringLiteral("平均报警率:"), page), 0, 2);
+    m_kpiAvgPerHour = new QLabel(QStringLiteral("-- /hr"), page);
+    m_kpiAvgPerHour->setStyleSheet("font-size: 16px; font-weight: bold;");
+    metricsLayout->addWidget(m_kpiAvgPerHour, 0, 3);
+
+    // 峰值报警率
+    metricsLayout->addWidget(new QLabel(QStringLiteral("峰值报警率:"), page), 1, 0);
+    m_kpiPeakRate = new QLabel(QStringLiteral("-- /10min"), page);
+    m_kpiPeakRate->setStyleSheet("font-size: 16px; font-weight: bold;");
+    metricsLayout->addWidget(m_kpiPeakRate, 1, 1);
+
+    // 陈旧报警百分比
+    metricsLayout->addWidget(new QLabel(QStringLiteral("陈旧报警:"), page), 1, 2);
+    m_kpiStalePercent = new QLabel(QStringLiteral("-- %"), page);
+    m_kpiStalePercent->setStyleSheet("font-size: 16px; font-weight: bold;");
+    metricsLayout->addWidget(m_kpiStalePercent, 1, 3);
+
+    // 报警洪峰次数
+    metricsLayout->addWidget(new QLabel(QStringLiteral("报警洪峰次数:"), page), 2, 0);
+    m_kpiFloodCount = new QLabel(QStringLiteral("--"), page);
+    m_kpiFloodCount->setStyleSheet("font-size: 16px; font-weight: bold;");
+    metricsLayout->addWidget(m_kpiFloodCount, 2, 1);
+
+    // 颤振报警次数
+    metricsLayout->addWidget(new QLabel(QStringLiteral("颤振报警次数:"), page), 2, 2);
+    m_kpiChatteringCount = new QLabel(QStringLiteral("--"), page);
+    m_kpiChatteringCount->setStyleSheet("font-size: 16px; font-weight: bold;");
+    metricsLayout->addWidget(m_kpiChatteringCount, 2, 3);
+
+    mainLayout->addWidget(metricsGroup);
+
+    // ---- 底部左：优先级分布 ----
+    QGroupBox* priorityGroup = new QGroupBox(QStringLiteral("优先级分布"), page);
+    QVBoxLayout* priLayout = new QVBoxLayout(priorityGroup);
+
+    m_kpiCriticalCount = new QLabel(QStringLiteral("Critical: --"), page);
+    m_kpiCriticalCount->setStyleSheet("font-size: 14px; color: #ff4444; font-weight: bold;");
+    m_kpiMajorCount = new QLabel(QStringLiteral("Major: --"), page);
+    m_kpiMajorCount->setStyleSheet("font-size: 14px; color: #ff8800; font-weight: bold;");
+    m_kpiMinorCount = new QLabel(QStringLiteral("Minor: --"), page);
+    m_kpiMinorCount->setStyleSheet("font-size: 14px; color: #ffcc00; font-weight: bold;");
+    m_kpiAdvisoryCount = new QLabel(QStringLiteral("Advisory: --"), page);
+    m_kpiAdvisoryCount->setStyleSheet("font-size: 14px; color: #4488ff; font-weight: bold;");
+
+    priLayout->addWidget(m_kpiCriticalCount);
+    priLayout->addWidget(m_kpiMajorCount);
+    priLayout->addWidget(m_kpiMinorCount);
+    priLayout->addWidget(m_kpiAdvisoryCount);
+
+    // 屏蔽/抑制统计
+    priLayout->addSpacing(10);
+    m_kpiShelvedCount = new QLabel(QStringLiteral("已屏蔽: --"), page);
+    m_kpiShelvedCount->setStyleSheet("font-size: 14px; color: #888;");
+    m_kpiSuppressedCount = new QLabel(QStringLiteral("已抑制: --"), page);
+    m_kpiSuppressedCount->setStyleSheet("font-size: 14px; color: #888;");
+    priLayout->addWidget(m_kpiShelvedCount);
+    priLayout->addWidget(m_kpiSuppressedCount);
+    priLayout->addStretch();
+
+    // ---- 底部右：Top5 频发报警 ----
+    QGroupBox* top5Group = new QGroupBox(QStringLiteral("Top5 频发报警 (Bad Actor)"), page);
+    QVBoxLayout* top5Layout = new QVBoxLayout(top5Group);
+    m_kpiTop5Frequent = new QLabel(QStringLiteral("暂无数据"), page);
+    m_kpiTop5Frequent->setWordWrap(true);
+    m_kpiTop5Frequent->setStyleSheet("font-size: 13px;");
+    top5Layout->addWidget(m_kpiTop5Frequent);
+    top5Layout->addStretch();
+
+    // 底部布局
+    QHBoxLayout* bottomLayout = new QHBoxLayout();
+    bottomLayout->addWidget(priorityGroup, 1);
+    bottomLayout->addWidget(top5Group, 2);
+    mainLayout->addLayout(bottomLayout);
+
+    // 刷新按钮
+    QPushButton* refreshKpiBtn = new QPushButton(QStringLiteral("🔄 刷新KPI"), page);
+    refreshKpiBtn->setFixedHeight(32);
+    connect(refreshKpiBtn, &QPushButton::clicked, this, &MYDSCProject::onRefreshKpiDashboard);
+    mainLayout->addWidget(refreshKpiBtn, 0, Qt::AlignRight);
+
+    return page;
+}
+
+// ============================================================
+// 变更日志查看页面
+//
+// ISA-18.2 要求所有报警参数变更必须有审计追踪记录。
+// 包括：报警限值修改、优先级变更、屏蔽/抑制操作、
+// 注释添加、审批流程等。
+// ============================================================
+QWidget* MYDSCProject::createChangeLogPage()
+{
+    QWidget* page = new QWidget(this);
+    QVBoxLayout* layout = new QVBoxLayout(page);
+
+    // 工具栏
+    QHBoxLayout* toolbarLayout = new QHBoxLayout();
+
+    QPushButton* refreshBtn = new QPushButton(QStringLiteral("🔄 刷新"), page);
+    refreshBtn->setFixedWidth(70);
+    connect(refreshBtn, &QPushButton::clicked, this, &MYDSCProject::refreshChangeLog);
+    toolbarLayout->addWidget(refreshBtn);
+
+    toolbarLayout->addStretch();
+
+    QLabel* tipLabel = new QLabel(
+        QStringLiteral("ISA-18.2 审计追踪：记录所有报警参数变更、操作员操作和审批流程"), page);
+    tipLabel->setStyleSheet("color: #888; font-size: 12px;");
+    toolbarLayout->addWidget(tipLabel);
+
+    layout->addLayout(toolbarLayout);
+
+    // 变更日志表格
+    m_changeLogTable = new QTableWidget(0, 7, page);
+    m_changeLogTable->setHorizontalHeaderLabels({
+        QStringLiteral("时间"), QStringLiteral("操作人"), QStringLiteral("变更类型"),
+        QStringLiteral("报警ID"), QStringLiteral("位号"), QStringLiteral("变更前"),
+        QStringLiteral("变更后")
+    });
+    m_changeLogTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_changeLogTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_changeLogTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_changeLogTable->setAlternatingRowColors(true);
+    m_changeLogTable->horizontalHeader()->setStretchLastSection(true);
+    m_changeLogTable->verticalHeader()->setVisible(false);
+    m_changeLogTable->setColumnWidth(0, 140);
+    m_changeLogTable->setColumnWidth(1, 80);
+    m_changeLogTable->setColumnWidth(2, 100);
+    m_changeLogTable->setColumnWidth(3, 140);
+    m_changeLogTable->setColumnWidth(4, 80);
+    m_changeLogTable->setColumnWidth(5, 120);
+
+    layout->addWidget(m_changeLogTable);
+
+    return page;
+}
+
+// ============================================================
+// 刷新变更日志列表
+// ============================================================
+void MYDSCProject::refreshChangeLog()
+{
+    if (!m_changeLogTable) return;
+
+    // 从数据库读取变更记录（ISA-18.2 Level 4 审计追踪）
+    auto records = DatabaseManager::instance().queryChangeRecords(0, 100);
+
+    m_changeLogTable->setRowCount(0);
+
+    for (const auto& rec : records) {
+        int row = m_changeLogTable->rowCount();
+        m_changeLogTable->insertRow(row);
+
+        // 时间
+        m_changeLogTable->setItem(row, 0, new QTableWidgetItem(
+            QDateTime::fromMSecsSinceEpoch(rec.changeTime).toString("yyyy-MM-dd HH:mm:ss")));
+
+        // 操作人
+        m_changeLogTable->setItem(row, 1, new QTableWidgetItem(rec.operatorName));
+
+        // 变更类型（字段名作为变更类型）
+        m_changeLogTable->setItem(row, 2, new QTableWidgetItem(rec.fieldName));
+
+        // 报警ID（用tagId代替）
+        m_changeLogTable->setItem(row, 3, new QTableWidgetItem(QString::number(rec.tagId)));
+
+        // 位号名（从TagConfigMgr查询）
+        TagInfo tagInfo = TagConfigMgr::instance().getTag(rec.tagId);
+        m_changeLogTable->setItem(row, 4, new QTableWidgetItem(tagInfo.tagName));
+
+        // 变更前
+        m_changeLogTable->setItem(row, 5, new QTableWidgetItem(rec.oldValue));
+
+        // 变更后
+        m_changeLogTable->setItem(row, 6, new QTableWidgetItem(rec.newValue));
+    }
+}
+
+// ============================================================
+// KPI 仪表盘刷新
+//
+// 从 AlarmKpiMonitor 获取实时KPI数据并更新UI。
+// EEMUA 191 标准关键阈值：
+// - 10分钟报警率 ≤ 10: 可管理（绿色）
+// - 10分钟报警率 10-20: 可容忍（黄色）
+// - 10分钟报警率 > 20: 过载（红色）
+// ============================================================
+void MYDSCProject::onRefreshKpiDashboard()
+{
+    auto kpi = AlarmEngine::instance().kpiSnapshot();
+
+    // 系统健康评分
+    int score = qBound(0, static_cast<int>(kpi.systemHealthScore), 100);
+    m_kpiHealthScore->setText(QString::number(score));
+    m_kpiHealthBar->setValue(score);
+
+    // 健康评分颜色和等级
+    QString scoreColor;
+    QString grade;
+    if (score >= 80) {
+        scoreColor = "#4CAF50";
+        grade = QStringLiteral("A - 优秀");
+    } else if (score >= 60) {
+        scoreColor = "#8BC34A";
+        grade = QStringLiteral("B - 良好");
+    } else if (score >= 40) {
+        scoreColor = "#FFC107";
+        grade = QStringLiteral("C - 一般");
+    } else if (score >= 20) {
+        scoreColor = "#FF9800";
+        grade = QStringLiteral("D - 较差");
+    } else {
+        scoreColor = "#F44336";
+        grade = QStringLiteral("F - 危险");
+    }
+
+    m_kpiHealthScore->setStyleSheet(
+        QString("font-size: 48px; font-weight: bold; color: %1;").arg(scoreColor));
+    m_kpiHealthBar->setStyleSheet(
+        QString("QProgressBar { border: 1px solid #555; border-radius: 4px; text-align: center; }"
+                "QProgressBar::chunk { background: %1; border-radius: 3px; }").arg(scoreColor));
+    m_kpiHealthGrade->setText(QStringLiteral("等级: ") + grade);
+    m_kpiHealthGrade->setStyleSheet(
+        QString("font-size: 18px; font-weight: bold; color: %1;").arg(scoreColor));
+
+    // 10分钟报警率（EEMUA 191 核心指标）
+    double rate10min = kpi.alarmCount10min;
+    QString rate10Color;
+    if (rate10min <= 10.0) {
+        rate10Color = "#4CAF50";
+    } else if (rate10min <= 20.0) {
+        rate10Color = "#FFC107";
+    } else {
+        rate10Color = "#F44336";
+    }
+    m_kpiAlarmRate10min->setText(QString("%1 /10min").arg(rate10min, 0, 'f', 1));
+    m_kpiAlarmRate10min->setStyleSheet(
+        QString("font-size: 16px; font-weight: bold; color: %1;").arg(rate10Color));
+
+    // 平均每小时报警率
+    m_kpiAvgPerHour->setText(QString("%1 /hr").arg(kpi.avgPerHour, 0, 'f', 1));
+
+    // 峰值报警率
+    m_kpiPeakRate->setText(QString("%1 /10min").arg(kpi.peakCount10min));
+
+    // 陈旧报警百分比
+    double stalePct = kpi.staleAlarmPercent;
+    QString staleColor = (stalePct > 5.0) ? "#F44336" : "#4CAF50";
+    m_kpiStalePercent->setText(QString("%1 %").arg(stalePct, 0, 'f', 1));
+    m_kpiStalePercent->setStyleSheet(
+        QString("font-size: 16px; font-weight: bold; color: %1;").arg(staleColor));
+
+    // 报警洪峰次数
+    m_kpiFloodCount->setText(QString::number(kpi.floodEventCount));
+
+    // 颤振报警次数
+    m_kpiChatteringCount->setText(QString::number(kpi.chatteringCount));
+
+    // 优先级分布
+    m_kpiCriticalCount->setText(QString("Critical: %1").arg(kpi.criticalCount));
+    m_kpiMajorCount->setText(QString("Major: %1").arg(kpi.majorCount));
+    m_kpiMinorCount->setText(QString("Minor: %1").arg(kpi.minorCount));
+    m_kpiAdvisoryCount->setText(QString("Advisory: %1").arg(kpi.advisoryCount));
+
+    // 屏蔽/抑制统计
+    m_kpiShelvedCount->setText(QString("已屏蔽: %1").arg(kpi.shelvedCount));
+    m_kpiSuppressedCount->setText(QString("已抑制: %1").arg(kpi.suppressedCount));
+
+    // Top5 频发报警（Bad Actor 分析）
+    auto topAlarms = AlarmEngine::instance().topFrequentAlarms(5);
+    QString top5Text;
+    int rank = 1;
+    for (const auto& [tagId, count] : topAlarms) {
+        TagInfo tagInfo = TagConfigMgr::instance().getTag(tagId);
+        QString name = tagInfo.tagName.isEmpty() ? QString::number(tagId) : tagInfo.tagName;
+        top5Text += QString("%1. %2 — 触发 %3 次\n").arg(rank++).arg(name).arg(count);
+    }
+    if (top5Text.isEmpty()) {
+        top5Text = QStringLiteral("暂无频发报警数据");
+    }
+    m_kpiTop5Frequent->setText(top5Text.trimmed());
+}
+
+// ============================================================
+// ISA-18.2 报警屏蔽（Shelve）
+//
+// 操作员可临时屏蔽一个报警，使其在设定时间内不再显示。
+// 屏蔽需要指定持续时间（默认1小时），到期自动解除。
+// 屏蔽操作需要操作员权限，且会被审计追踪记录。
+// ============================================================
+void MYDSCProject::onShelveAlarm(quint32 tagId)
+{
+    if (!AuthManager::instance().hasPermission(UserLevel::Operator)) {
+        QMessageBox::warning(this, QStringLiteral("权限不足"),
+            QStringLiteral("需要操作员权限才能屏蔽报警。"));
+        return;
+    }
+
+    // 屏蔽时长选择对话框
+    QDialog shelveDialog(this);
+    shelveDialog.setWindowTitle(QStringLiteral("屏蔽报警 (ISA-18.2 Shelve)"));
+    shelveDialog.setMinimumWidth(320);
+
+    QVBoxLayout* layout = new QVBoxLayout(&shelveDialog);
+
+    TagInfo tagInfo = TagConfigMgr::instance().getTag(tagId);
+    layout->addWidget(new QLabel(
+        QStringLiteral("位号: %1 (ID: %2)").arg(tagInfo.tagName).arg(tagId), &shelveDialog));
+
+    layout->addWidget(new QLabel(
+        QStringLiteral("选择屏蔽持续时间:"), &shelveDialog));
+
+    QComboBox* durationCombo = new QComboBox(&shelveDialog);
+    durationCombo->addItem(QStringLiteral("15 分钟"), 15);
+    durationCombo->addItem(QStringLiteral("30 分钟"), 30);
+    durationCombo->addItem(QStringLiteral("1 小时"), 60);
+    durationCombo->addItem(QStringLiteral("2 小时"), 120);
+    durationCombo->addItem(QStringLiteral("4 小时"), 240);
+    durationCombo->addItem(QStringLiteral("8 小时（整个班次）"), 480);
+    durationCombo->setCurrentIndex(2);
+    layout->addWidget(durationCombo);
+
+    // 屏蔽原因
+    layout->addWidget(new QLabel(QStringLiteral("屏蔽原因:"), &shelveDialog));
+    QTextEdit* reasonEdit = new QTextEdit(&shelveDialog);
+    reasonEdit->setMaximumHeight(80);
+    reasonEdit->setPlaceholderText(QStringLiteral("输入屏蔽原因（可选）"));
+    layout->addWidget(reasonEdit);
+
+    // 确认/取消按钮
+    QDialogButtonBox* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &shelveDialog);
+    layout->addWidget(buttons);
+
+    connect(buttons, &QDialogButtonBox::accepted, &shelveDialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &shelveDialog, &QDialog::reject);
+
+    if (shelveDialog.exec() == QDialog::Accepted) {
+        int durationMin = durationCombo->currentData().toInt();
+        QString reason = reasonEdit->toPlainText().trimmed();
+
+        // 调用AlarmEngine屏蔽
+        AlarmEngine::instance().shelveAlarm(tagId, durationMin);
+
+        LOG_INFO("MainWindow",
+            QString("报警屏蔽: tagId=%1, 时长=%2min, 原因=%3")
+                .arg(tagId).arg(durationMin).arg(reason));
+
+        // 刷新报警汇总
+        refreshAlarmSummary();
+
+        QMessageBox::information(this, QStringLiteral("屏蔽成功"),
+            QStringLiteral("报警已屏蔽 %1 分钟。\n到期后将自动解除。").arg(durationMin));
+    }
+}
+
+// ============================================================
+// 取消报警屏蔽
+// ============================================================
+void MYDSCProject::onUnshelveAlarm(quint32 tagId)
+{
+    if (!AuthManager::instance().hasPermission(UserLevel::Operator)) {
+        QMessageBox::warning(this, QStringLiteral("权限不足"),
+            QStringLiteral("需要操作员权限才能取消屏蔽。"));
+        return;
+    }
+
+    AlarmEngine::instance().unshelveAlarm(tagId);
+    LOG_INFO("MainWindow", QString("取消报警屏蔽: tagId=%1").arg(tagId));
+    refreshAlarmSummary();
+}
+
+// ============================================================
+// ISA-18.2 设计抑制（Suppression-by-Design）
+//
+// 设计抑制是工程师级别的操作，用于在特定工况下
+// 永久性抑制某个报警。例如：
+// - 设备检修期间抑制相关报警
+// - 工艺变更后抑制不再适用的报警
+// 需要工程师权限，且必须记录抑制原因。
+// ============================================================
+void MYDSCProject::onSuppressAlarm(quint32 tagId)
+{
+    if (!AuthManager::instance().hasPermission(UserLevel::Engineer)) {
+        QMessageBox::warning(this, QStringLiteral("权限不足"),
+            QStringLiteral("需要工程师权限才能进行设计抑制。"));
+        return;
+    }
+
+    if (!AuthManager::instance().confirmCriticalAction(
+            QStringLiteral("设计抑制报警"), QStringLiteral("永久抑制该报警，需工程师审批")))
+        return;
+
+    // 抑制原因对话框
+    QDialog suppressDialog(this);
+    suppressDialog.setWindowTitle(QStringLiteral("设计抑制 (ISA-18.2 Suppression-by-Design)"));
+    suppressDialog.setMinimumWidth(360);
+
+    QVBoxLayout* layout = new QVBoxLayout(&suppressDialog);
+
+    TagInfo tagInfo = TagConfigMgr::instance().getTag(tagId);
+    layout->addWidget(new QLabel(
+        QStringLiteral("⚠ 警告：设计抑制将永久禁止该报警触发！"), &suppressDialog));
+    layout->addWidget(new QLabel(
+        QStringLiteral("位号: %1 (ID: %2)").arg(tagInfo.tagName).arg(tagId), &suppressDialog));
+
+    layout->addWidget(new QLabel(QStringLiteral("抑制原因（必填）:"), &suppressDialog));
+    QTextEdit* reasonEdit = new QTextEdit(&suppressDialog);
+    reasonEdit->setMaximumHeight(80);
+    reasonEdit->setPlaceholderText(QStringLiteral("输入设计抑制原因"));
+    layout->addWidget(reasonEdit);
+
+    QDialogButtonBox* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &suppressDialog);
+    layout->addWidget(buttons);
+
+    connect(buttons, &QDialogButtonBox::accepted, &suppressDialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &suppressDialog, &QDialog::reject);
+
+    if (suppressDialog.exec() == QDialog::Accepted) {
+        QString reason = reasonEdit->toPlainText().trimmed();
+        if (reason.isEmpty()) {
+            QMessageBox::warning(this, QStringLiteral("原因必填"),
+                QStringLiteral("设计抑制必须填写原因。"));
+            return;
+        }
+
+        AlarmEngine::instance().suppressAlarm(tagId, reason);
+
+        LOG_WARN("MainWindow",
+            QString("设计抑制: tagId=%1, 原因=%2").arg(tagId).arg(reason));
+
+        refreshAlarmSummary();
+
+        QMessageBox::information(this, QStringLiteral("抑制成功"),
+            QStringLiteral("报警已被设计抑制。\n需要工程师权限才能解除。"));
+    }
+}
+
+// ============================================================
+// 取消设计抑制
+// ============================================================
+void MYDSCProject::onUnsuppressAlarm(quint32 tagId)
+{
+    if (!AuthManager::instance().hasPermission(UserLevel::Engineer)) {
+        QMessageBox::warning(this, QStringLiteral("权限不足"),
+            QStringLiteral("需要工程师权限才能取消设计抑制。"));
+        return;
+    }
+
+    if (!AuthManager::instance().confirmCriticalAction(
+            QStringLiteral("取消设计抑制"), QStringLiteral("恢复该报警的正常触发")))
+        return;
+
+    AlarmEngine::instance().unsuppressAlarm(tagId);
+    LOG_INFO("MainWindow", QString("取消设计抑制: tagId=%1").arg(tagId));
+    refreshAlarmSummary();
+}
+
+// ============================================================
+// ISA-18.2 设备停用（Out-of-Service）
+//
+// 当设备进入停用状态时，相关报警不再触发。
+// 典型场景：设备检修、设备报废、临时停机。
+// 需要工程师权限，且需要记录停用原因。
+// ============================================================
+void MYDSCProject::onSetOutOfService(quint32 tagId)
+{
+    if (!AuthManager::instance().hasPermission(UserLevel::Engineer)) {
+        QMessageBox::warning(this, QStringLiteral("权限不足"),
+            QStringLiteral("需要工程师权限才能设置设备停用。"));
+        return;
+    }
+
+    if (!AuthManager::instance().confirmCriticalAction(
+            QStringLiteral("设备停用"), QStringLiteral("将设备设为停用状态，相关报警将不再触发")))
+        return;
+
+    // 停用原因对话框
+    QDialog oosDialog(this);
+    oosDialog.setWindowTitle(QStringLiteral("设备停用 (ISA-18.2 Out-of-Service)"));
+    oosDialog.setMinimumWidth(360);
+
+    QVBoxLayout* layout = new QVBoxLayout(&oosDialog);
+
+    TagInfo tagInfo = TagConfigMgr::instance().getTag(tagId);
+    layout->addWidget(new QLabel(
+        QStringLiteral("⚠ 设备停用后，相关报警将不再触发！"), &oosDialog));
+    layout->addWidget(new QLabel(
+        QStringLiteral("位号: %1 (ID: %2)").arg(tagInfo.tagName).arg(tagId), &oosDialog));
+
+    layout->addWidget(new QLabel(QStringLiteral("停用原因（必填）:"), &oosDialog));
+    QTextEdit* reasonEdit = new QTextEdit(&oosDialog);
+    reasonEdit->setMaximumHeight(80);
+    reasonEdit->setPlaceholderText(QStringLiteral("输入停用原因"));
+    layout->addWidget(reasonEdit);
+
+    QDialogButtonBox* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &oosDialog);
+    layout->addWidget(buttons);
+
+    connect(buttons, &QDialogButtonBox::accepted, &oosDialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &oosDialog, &QDialog::reject);
+
+    if (oosDialog.exec() == QDialog::Accepted) {
+        QString reason = reasonEdit->toPlainText().trimmed();
+        if (reason.isEmpty()) {
+            QMessageBox::warning(this, QStringLiteral("原因必填"),
+                QStringLiteral("设备停用必须填写原因。"));
+            return;
+        }
+
+        AlarmEngine::instance().setOutOfService(tagId, reason);
+
+        LOG_WARN("MainWindow",
+            QString("设备停用: tagId=%1, 原因=%2").arg(tagId).arg(reason));
+
+        refreshAlarmSummary();
+
+        QMessageBox::information(this, QStringLiteral("停用成功"),
+            QStringLiteral("设备已设为停用状态。\n需要工程师权限才能恢复。"));
+    }
+}
+
+// ============================================================
+// 恢复服务
+// ============================================================
+void MYDSCProject::onReturnToService(quint32 tagId)
+{
+    if (!AuthManager::instance().hasPermission(UserLevel::Engineer)) {
+        QMessageBox::warning(this, QStringLiteral("权限不足"),
+            QStringLiteral("需要工程师权限才能恢复设备服务。"));
+        return;
+    }
+
+    if (!AuthManager::instance().confirmCriticalAction(
+            QStringLiteral("恢复服务"), QStringLiteral("恢复设备的正常报警功能")))
+        return;
+
+    AlarmEngine::instance().returnToService(tagId);
+    LOG_INFO("MainWindow", QString("恢复服务: tagId=%1").arg(tagId));
+    refreshAlarmSummary();
+}
+
+// ============================================================
+// ISA-18.2 操作员注释（Operator Annotation）
+//
+// 操作员可以为任何报警添加注释，记录操作决策和现场情况。
+// 这是 ISA-18.2 审计追踪的重要组成部分。
+// 注释内容包括：
+// - 操作员对报警的判断
+// - 采取的应对措施
+// - 现场观察到的异常情况
+// ============================================================
+void MYDSCProject::onAnnotateAlarm(const QString& alarmId)
+{
+    if (!AuthManager::instance().hasPermission(UserLevel::Operator)) {
+        QMessageBox::warning(this, QStringLiteral("权限不足"),
+            QStringLiteral("需要操作员权限才能添加注释。"));
+        return;
+    }
+
+    QDialog annotateDialog(this);
+    annotateDialog.setWindowTitle(QStringLiteral("添加注释 (ISA-18.2 Annotation)"));
+    annotateDialog.setMinimumWidth(400);
+    annotateDialog.setMinimumHeight(300);
+
+    QVBoxLayout* layout = new QVBoxLayout(&annotateDialog);
+
+    layout->addWidget(new QLabel(
+        QStringLiteral("报警ID: %1").arg(alarmId), &annotateDialog));
+
+    layout->addWidget(new QLabel(QStringLiteral("注释内容:"), &annotateDialog));
+    QTextEdit* annotationEdit = new QTextEdit(&annotateDialog);
+    annotationEdit->setPlaceholderText(
+        QStringLiteral("输入注释内容，例如：\n"
+                       "- 已通知现场巡检人员\n"
+                       "- 原因：上游装置波动导致\n"
+                       "- 已采取：调整PID参数"));
+    layout->addWidget(annotationEdit);
+
+    QDialogButtonBox* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &annotateDialog);
+    layout->addWidget(buttons);
+
+    connect(buttons, &QDialogButtonBox::accepted, &annotateDialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &annotateDialog, &QDialog::reject);
+
+    if (annotateDialog.exec() == QDialog::Accepted) {
+        QString annotation = annotationEdit->toPlainText().trimmed();
+        if (annotation.isEmpty()) {
+            QMessageBox::warning(this, QStringLiteral("注释为空"),
+                QStringLiteral("请输入注释内容。"));
+            return;
+        }
+
+        AlarmEngine::instance().annotateAlarm(alarmId, annotation);
+
+        LOG_INFO("MainWindow",
+            QString("报警注释: alarmId=%1, 内容=%2").arg(alarmId).arg(annotation));
+    }
+}
+
+// ============================================================
+// 确认恢复报警（RTN Unack → Normal）
+//
+// ISA-18.2 状态机：当报警从 ReturnToNormalUnacknowledged
+// 确认后，状态变为 ReturnToNormalAcknowledged，
+// 然后自动转为 Normal（从活跃列表移除）。
+// ============================================================
+void MYDSCProject::onAcknowledgeReturnToNormal(const QString& alarmId)
+{
+    if (!AuthManager::instance().hasPermission(UserLevel::Operator)) {
+        QMessageBox::warning(this, QStringLiteral("权限不足"),
+            QStringLiteral("需要操作员权限才能确认报警。"));
+        return;
+    }
+
+    AlarmEngine::instance().acknowledgeAlarm(alarmId);
+    LOG_INFO("MainWindow", QString("确认恢复报警: alarmId=%1").arg(alarmId));
+    refreshAlarmSummary();
+}
+
+// ============================================================
+// 报警状态显示文本
+// ============================================================
+QString MYDSCProject::alarmStateText(AlarmState state) const
+{
+    switch (state) {
+    case AlarmState::Normal:                        return QStringLiteral("正常");
+    case AlarmState::ActiveUnacknowledged:          return QStringLiteral("活跃(未确认)");
+    case AlarmState::ActiveAcknowledged:            return QStringLiteral("活跃(已确认)");
+    case AlarmState::ReturnToNormalUnacknowledged:  return QStringLiteral("恢复(未确认)");
+    case AlarmState::ReturnToNormalAcknowledged:    return QStringLiteral("恢复(已确认)");
+    case AlarmState::Shelved:                       return QStringLiteral("已屏蔽");
+    case AlarmState::SuppressedByDesign:            return QStringLiteral("设计抑制");
+    case AlarmState::OutOfService:                  return QStringLiteral("停用");
+    default:                                        return QStringLiteral("未知");
+    }
+}
+
+// ============================================================
+// 优先级显示文本
+// ============================================================
+QString MYDSCProject::priorityText(AlarmPriority priority) const
+{
+    switch (priority) {
+    case AlarmPriority::Critical: return QStringLiteral("Critical");
+    case AlarmPriority::Major:    return QStringLiteral("Major");
+    case AlarmPriority::Minor:    return QStringLiteral("Minor");
+    case AlarmPriority::Advisory: return QStringLiteral("Advisory");
+    default:                      return QStringLiteral("--");
+    }
+}
+
+// ============================================================
+// 报警限值显示文本
+// ============================================================
+QString MYDSCProject::limitText(AlarmLimit limit) const
+{
+    switch (limit) {
+    case AlarmLimit::HighHigh:     return QStringLiteral("HH");
+    case AlarmLimit::High:         return QStringLiteral("H");
+    case AlarmLimit::Low:          return QStringLiteral("L");
+    case AlarmLimit::LowLow:       return QStringLiteral("LL");
+    case AlarmLimit::Deviation:    return QStringLiteral("DEV");
+    case AlarmLimit::RateOfChange: return QStringLiteral("ROC");
+    default:                       return QStringLiteral("--");
+    }
+}
+
+// ============================================================
+// 报警分类显示文本
+// ============================================================
+QString MYDSCProject::classificationText(AlarmClassification cls) const
+{
+    switch (cls) {
+    case AlarmClassification::Process:      return QStringLiteral("工艺");
+    case AlarmClassification::Safety:       return QStringLiteral("安全");
+    case AlarmClassification::Machinery:    return QStringLiteral("设备");
+    case AlarmClassification::Environmental: return QStringLiteral("环境");
+    default:                                return QStringLiteral("--");
+    }
+}
+
+// ============================================================
+// 报警状态背景色
+//
+// ISA-18.2 标准颜色方案：
+// - 活跃未确认：红色闪烁（最紧急）
+// - 活跃已确认：红色稳态
+// - 恢复未确认：黄色
+// - 恢复已确认：绿色
+// - 屏蔽：灰色
+// - 抑制：深灰色
+// - 停用：深灰色斜线
+// ============================================================
+QColor MYDSCProject::alarmStateColor(AlarmState state) const
+{
+    switch (state) {
+    case AlarmState::ActiveUnacknowledged:          return QColor(255, 100, 100);
+    case AlarmState::ActiveAcknowledged:            return QColor(255, 180, 180);
+    case AlarmState::ReturnToNormalUnacknowledged:  return QColor(255, 255, 150);
+    case AlarmState::ReturnToNormalAcknowledged:    return QColor(180, 255, 180);
+    case AlarmState::Shelved:                       return QColor(200, 200, 200);
+    case AlarmState::SuppressedByDesign:            return QColor(180, 180, 180);
+    case AlarmState::OutOfService:                  return QColor(160, 160, 160);
+    default:                                        return QColor(255, 255, 255);
     }
 }

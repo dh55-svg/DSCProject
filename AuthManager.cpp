@@ -1,7 +1,9 @@
 ﻿#include "AuthManager.h"
 #include "logger.h"
 #include "DatabaseManager.h"
+#include <QCoreApplication>
 #include <qcryptographichash.h>
+#include <QRandomGenerator>
 AuthManager& AuthManager::instance()
 {
 	static AuthManager instance;
@@ -43,6 +45,19 @@ void AuthManager::initialize()
 	setAutoLogoutTimeout(15*60*1000);
 
 	LOG_INFO("AuthManager", "权限管理器初始化完成");
+
+    // 程序退出前清理，避免 static 单例在 QApplication 析构后才销毁导致崩溃
+    connect(qApp, &QCoreApplication::aboutToQuit, this, &AuthManager::shutdown);
+}
+
+void AuthManager::shutdown()
+{
+    if (m_autoLogoutTimer) {
+        m_autoLogoutTimer->stop();
+        delete m_autoLogoutTimer;
+        m_autoLogoutTimer = nullptr;
+    }
+    LOG_INFO("AuthManager", "权限管理器已关闭");
 }
 
 bool AuthManager::login(const QString& username, const QString& password)
@@ -53,8 +68,37 @@ bool AuthManager::login(const QString& username, const QString& password)
 		LOG_WARN("AuthManager", QString("登录失败：用户不存在 - %1").arg(username));
 		return false;
 	}
-	QString inputHash = hashPassword(password);
-	if (inputHash != it->passwordHash) {
+
+	bool passwordOk = false;
+	QString storedHash = it->passwordHash;
+
+	// 检查是否为新的 salted hash 格式（"iterations$salt$hash"）
+	if (storedHash.contains('$')) {
+		QStringList parts = storedHash.split('$');
+		if (parts.size() == 3) {
+			int iterations = parts[0].toInt();
+			QString salt = parts[1];
+			QString expectedHash = parts[2];
+
+			// 使用相同 salt 和迭代次数重新计算
+			QByteArray work = (salt + password).toUtf8();
+			for (int i = 0; i < iterations; ++i) {
+				work = QCryptographicHash::hash(work, QCryptographicHash::Sha256);
+			}
+			if (QString::fromLatin1(work.toHex()) == expectedHash) {
+				passwordOk = true;
+			}
+		}
+	} else {
+		// 向后兼容旧格式（纯 SHA-256 无盐）
+		QByteArray hash = QCryptographicHash::hash(
+			password.toUtf8(), QCryptographicHash::Sha256);
+		if (QString::fromLatin1(hash.toHex()) == storedHash) {
+			passwordOk = true;
+		}
+	}
+
+	if (!passwordOk) {
 		LOG_WARN("AuthManager", QString("登录失败：密码错误 - %1").arg(username));
 		return false;
 	}
@@ -168,11 +212,25 @@ void AuthManager::resetAutoLogoutTimer()
 
 QString AuthManager::hashPassword(const QString& password) const
 {
-	// 使用SHA-256哈希密码
-	// 生产环境应使用bcrypt或argon2，这里简化处理
-	QByteArray hash = QCryptographicHash::hash(
-		password.toUtf8(), QCryptographicHash::Sha256);
-	return QString(hash.toHex());
+	// 生成随机盐（16字节 = 32 hex chars）
+	QByteArray salt;
+	for (int i = 0; i < 16; ++i) {
+		salt.append(static_cast<char>(QRandomGenerator::global()->bounded(256)));
+	}
+	QString saltHex = QString::fromLatin1(salt.toHex());
+
+	// PBKDF2-SHA256: 10000 轮迭代（生产环境应使用 bcrypt/argon2id）
+	const int iterations = 10000;
+	QByteArray work = (saltHex + password).toUtf8();
+	for (int i = 0; i < iterations; ++i) {
+		work = QCryptographicHash::hash(work, QCryptographicHash::Sha256);
+	}
+
+	// 格式: iterations$salt$hash
+	return QStringLiteral("%1$%2$%3")
+		.arg(iterations)
+		.arg(saltHex)
+		.arg(QString::fromLatin1(work.toHex()));
 }
 
 void AuthManager::onAutoLogoutTimeout()

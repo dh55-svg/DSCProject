@@ -117,7 +117,7 @@ void ValveItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
 
 void ValveItem::updateAppearance() {
 
-    TagInfo tag = RealtimeDb::instance().getTag(m_tagId);
+    TagInfo tag = TagConfigMgr::instance().getTag(m_tagId);
     if (tag.tagId != 0) {
         if (m_bindProperty == "outputValue") {
             m_openPercent = tag.out();

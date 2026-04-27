@@ -55,7 +55,7 @@ public:
     qint64 totalArchived() const { return m_totalArchived.loadRelaxed(); }
     qint64 totalFailed() const { return m_totalFailed.loadRelaxed(); }
 
-    // 查询历史趋势（转发给DatabaseManager）
+    // 查询历史趋势（优先内存缓存，未命中则走数据库）
     QVector<HistoryRecord> queryTrend(quint32 tagId,
         const QDateTime& startTime,
         const QDateTime& endTime,
@@ -67,6 +67,9 @@ public:
         const QDateTime& startTime,
         const QDateTime& endTime,
         int maxPoints = 5000);
+
+    // 设置内存缓存窗口大小（秒），默认1800秒=30分钟
+    void setCacheWindow(int seconds) { m_cacheWindowSec = qBound(60, seconds, 86400); }
 
 signals:
     void archiveCompleted(int recordCount, qint64 durationMs);
@@ -93,11 +96,29 @@ private:
         quint8 quality;
     };
 
+    // 从内存缓存查询历史数据
+    QVector<HistoryRecord> queryFromCache(quint32 tagId,
+        const QDateTime& startTime, const QDateTime& endTime) const;
+
+    // 将采样数据写入内存环形缓存
+    void writeToRecentCache(quint32 tagId, const ArchiveRecord& rec);
+
     QVector<ArchiveRecord> m_cache;
     QMutex m_cacheMutex;
     qint64 m_firstRecordTime = 0;
     int m_archiveIntervalSec = 300;
     int m_sampleIntervalMs = 1000;
+
+    // 内存最近历史缓存（环形缓冲区，用于趋势图快速响应）
+    // 每个位号最多保留 cacheWindowSec / sampleIntervalMs 条记录
+    struct TagHistoryRing {
+        QVector<HistoryRecord> records;  // 环形存储
+        int head = 0;                     // 写入位置
+        int count = 0;                    // 有效记录数
+        static constexpr int MAX_RECORDS = 1800;  // 最多缓存1800条（30分钟1秒采样）
+    };
+    QMap<quint32, TagHistoryRing> m_recentHistory;
+    int m_cacheWindowSec = 1800;          // 缓存窗口大小（秒），30分钟
 
     DoubleBuffer* m_doubleBuffer = nullptr;
     QAtomicInt m_running;

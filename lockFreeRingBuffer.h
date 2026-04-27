@@ -76,6 +76,7 @@ public:
         intptr_t diff = static_cast<intptr_t>(seq) - static_cast<intptr_t>(pos);
         if (diff == 0) {
             data = std::move(slot.data);
+            //标记槽位已被消费者读取，可以被生产者重新写入。
             slot.sequence.store(pos + 1 + m_mask, std::memory_order_release);
             m_dequeuePos.store(pos + 1, std::memory_order_relaxed);
             return true;

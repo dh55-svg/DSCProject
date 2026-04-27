@@ -1,4 +1,4 @@
-﻿#include "HistoryArchiveThread.h"
+#include "HistoryArchiveThread.h"
 #include "logger.h"
 HistoryArchiveThread& HistoryArchiveThread::instance()
 {
@@ -48,7 +48,28 @@ void HistoryArchiveThread::stop()
 
 QVector<HistoryRecord> HistoryArchiveThread::queryTrend(quint32 tagId, const QDateTime& startTime, const QDateTime& endTime, int maxPoints)
 {
-	// 转发给DatabaseManager
+	// 优先从内存缓存查询（最近数据）
+	QVector<HistoryRecord> cached = queryFromCache(tagId, startTime, endTime);
+
+	// 如果缓存完全覆盖请求范围，直接返回
+	qint64 cacheStart = QDateTime::currentMSecsSinceEpoch() - static_cast<qint64>(m_cacheWindowSec) * 1000;
+	if (!cached.isEmpty() && startTime.toMSecsSinceEpoch() >= cacheStart) {
+		// 降采样到 maxPoints
+		if (cached.size() > maxPoints && maxPoints > 0) {
+			QVector<HistoryRecord> downsampled;
+			downsampled.reserve(maxPoints);
+			int step = cached.size() / maxPoints;
+			if (step < 1) step = 1;
+			for (int i = 0; i < cached.size(); i += step) {
+				downsampled.append(cached[i]);
+				if (downsampled.size() >= maxPoints) break;
+			}
+			return downsampled;
+		}
+		return cached;
+	}
+
+	// 缓存未命中，走数据库查询
 	return DatabaseManager::instance().queryHistory(tagId, startTime, endTime, maxPoints);
 }
 
@@ -57,7 +78,7 @@ QMap<quint32, QVector<HistoryRecord>> HistoryArchiveThread::queryMultiTrend(cons
 	QMap<quint32, QVector<HistoryRecord>> result;
 
 	for (quint32 tagId : tagIds) {
-		result[tagId] = DatabaseManager::instance().queryHistory(tagId, startTime, endTime, maxPoints);
+		result[tagId] = queryTrend(tagId, startTime, endTime, maxPoints);
 	}
 
 	return result;
@@ -67,8 +88,8 @@ void HistoryArchiveThread::run()
 {
 	m_running.storeRelaxed(1);
 	LOG_INFO("HistoryArchiveThread",
-		QString("历史归档线程启动，采样间隔=%1ms，归档间隔=%2秒")
-		.arg(m_sampleIntervalMs).arg(m_archiveIntervalSec));
+		QString("历史归档线程启动，采样间隔=%1ms，归档间隔=%2秒，缓存窗口=%3秒")
+		.arg(m_sampleIntervalMs).arg(m_archiveIntervalSec).arg(m_cacheWindowSec));
 
 	while (m_running.loadRelaxed()) {
 		// 1. 从双缓冲区采样数据
@@ -116,9 +137,10 @@ void HistoryArchiveThread::sampleData()
 		record.timestamp = now;
 		record.quality = static_cast<quint8>(tag.quality);
 		m_cache.append(record);
+
+		// 写入内存环形缓存（趋势图快速查询用）
+		writeToRecentCache(tagId, record);
 	}
-
-
 }
 
 bool HistoryArchiveThread::doArchive()
@@ -168,4 +190,54 @@ bool HistoryArchiveThread::doArchive()
 		return false;
 	}
 
+}
+
+void HistoryArchiveThread::writeToRecentCache(quint32 tagId, const ArchiveRecord& rec)
+{
+	auto& ring = m_recentHistory[tagId];
+
+	HistoryRecord hr;
+	hr.tagId = rec.tagId;
+	hr.value = rec.value;
+	hr.timestamp = rec.timestamp;
+	hr.quality = rec.quality;
+
+	if (ring.count < TagHistoryRing::MAX_RECORDS) {
+		// 缓冲区未满，追加
+		if (ring.records.size() <= ring.head) {
+			ring.records.append(hr);
+		} else {
+			ring.records[ring.head] = hr;
+		}
+		ring.count++;
+	} else {
+		// 缓冲区已满，覆盖最旧记录
+		ring.records[ring.head] = hr;
+	}
+	ring.head = (ring.head + 1) % TagHistoryRing::MAX_RECORDS;
+}
+
+QVector<HistoryRecord> HistoryArchiveThread::queryFromCache(quint32 tagId,
+    const QDateTime& startTime, const QDateTime& endTime) const
+{
+	QVector<HistoryRecord> result;
+	auto it = m_recentHistory.find(tagId);
+	if (it == m_recentHistory.end()) return result;
+
+	const auto& ring = it.value();
+	if (ring.count == 0) return result;
+
+	qint64 startMs = startTime.toMSecsSinceEpoch();
+	qint64 endMs = endTime.toMSecsSinceEpoch();
+
+	// 遍历环形缓冲区中所有有效记录
+	for (int i = 0; i < ring.count; ++i) {
+		int idx = (ring.head - ring.count + i + TagHistoryRing::MAX_RECORDS) % TagHistoryRing::MAX_RECORDS;
+		const auto& rec = ring.records[idx];
+		if (rec.timestamp >= startMs && rec.timestamp <= endMs) {
+			result.append(rec);
+		}
+	}
+
+	return result;
 }
