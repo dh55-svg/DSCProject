@@ -1,0 +1,118 @@
+{
+  "sceneName": "1号反应釜工段",
+  "sceneWidth": 1200,
+  "sceneHeight": 700,
+  "backgroundColor": "#14181f",
+  "items": [
+    {
+      "type": "Tank",
+      "x": 350, "y": 80,
+      "width": 140, "height": 260,
+      "binding_tag": "LT_101",
+      "liquidColor": "#1f6feb",
+      "tankColor": "#505050"
+    },
+    {
+      "type": "Tank",
+      "x": 800, "y": 130,
+      "width": 100, "height": 200,
+      "binding_tag": "LT_102",
+      "liquidColor": "#238636",
+      "tankColor": "#505050"
+    },
+    {
+      "type": "Valve",
+      "x": 150, "y": 180,
+      "size": 40,
+      "binding_tag": "FV_101",
+      "bind_property": "outputValue",
+      "color_open": "#3fb950",
+      "color_closed": "#f85149"
+    },
+    {
+      "type": "Valve",
+      "x": 600, "y": 280,
+      "size": 40,
+      "binding_tag": "FV_102",
+      "bind_property": "outputValue",
+      "color_open": "#3fb950",
+      "color_closed": "#f85149"
+    },
+    {
+      "type": "Valve",
+      "x": 100, "y": 180,
+      "size": 35,
+      "binding_tag": "XV_101",
+      "bind_property": "currentValue",
+      "color_open": "#3fb950",
+      "color_closed": "#f85149"
+    },
+    {
+      "type": "Pump",
+      "x": 80, "y": 260,
+      "size": 45,
+      "binding_tag": "PUMP_101"
+    },
+    {
+      "type": "Pump",
+      "x": 520, "y": 380,
+      "size": 45,
+      "binding_tag": "PUMP_102"
+    },
+    {
+      "type": "Pipe",
+      "x": 100, "y": 200,
+      "length": 250,
+      "width": 8,
+      "flowDirection": 0,
+      "flowing": true,
+      "binding_tag": "FIC_101",
+      "pipeColor": "#606060",
+      "fluidColor": "#58a6ff"
+    },
+    {
+      "type": "Pipe",
+      "x": 490, "y": 280,
+      "length": 110,
+      "width": 8,
+      "flowDirection": 0,
+      "flowing": true,
+      "binding_tag": "FV_102",
+      "pipeColor": "#606060",
+      "fluidColor": "#58a6ff"
+    },
+    {
+      "type": "Pipe",
+      "x": 600, "y": 280,
+      "length": 200,
+      "width": 8,
+      "flowDirection": 0,
+      "flowing": true,
+      "binding_tag": "FV_102",
+      "pipeColor": "#606060",
+      "fluidColor": "#58a6ff"
+    },
+    {
+      "type": "Pipe",
+      "x": 490, "y": 280,
+      "length": 110,
+      "width": 8,
+      "flowDirection": 1,
+      "flowing": true,
+      "binding_tag": "FV_101",
+      "pipeColor": "#606060",
+      "fluidColor": "#58a6ff"
+    },
+    {
+      "type": "Pipe",
+      "x": 100, "y": 200,
+      "length": 100,
+      "width": 8,
+      "flowDirection": 0,
+      "flowing": true,
+      "binding_tag": "FIC_101",
+      "pipeColor": "#606060",
+      "fluidColor": "#58a6ff"
+    }
+  ]
+}

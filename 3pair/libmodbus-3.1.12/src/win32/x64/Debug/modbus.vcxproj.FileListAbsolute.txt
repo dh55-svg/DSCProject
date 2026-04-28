@@ -1,0 +1,2 @@
+C:\qtrpoject\3pair\libmodbus-3.1.12\src\win32\x64\Debug\modbus.dll
+C:\qtrpoject\MYDSCProject\MYDSCProject\3pair\libmodbus-3.1.12\src\win32\x64\Debug\modbus.dll
