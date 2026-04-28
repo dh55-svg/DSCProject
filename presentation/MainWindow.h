@@ -10,11 +10,13 @@
 #include <QMenuBar>
 #include <QToolBar>
 #include <QStatusBar>
+#include <memory>
 
 #include "application/DataController.h"
 #include "application/AlarmController.h"
 #include "application/AuthController.h"
 #include "infrastructure/logging/ILogger.h"
+#include "infrastructure/monitoring/PerformanceMonitor.h"
 
 class PidScene;
 class TrendWidget;
@@ -39,6 +41,9 @@ private slots:
     void onExportData();
     void onShowTagConfig();
     void onShowPerformanceMonitor();
+    void onOpenProject();
+    void onSaveProject();
+    void onAbout();
 
 private:
     void setupMenuBar();
@@ -47,11 +52,15 @@ private:
     void setupDockWidgets();
     void setupStatusBar();
     void setupConnections();
+    void refreshDataTable();
+    void refreshAlarmTable();
+    void refreshDeviceTree();
 
     DataController& m_dataCtrl;
     AlarmController& m_alarmCtrl;
     AuthController& m_authCtrl;
     ILogger* m_logger;
+    PerformanceMonitor m_perfMon;
 
     QTabWidget* m_tabWidget = nullptr;
     PidScene* m_pidScene = nullptr;
@@ -69,4 +78,7 @@ private:
     QLabel* m_statusTags = nullptr;
     QLabel* m_statusAlarms = nullptr;
     QLabel* m_statusUser = nullptr;
+    QLabel* m_statusTime = nullptr;
+
+    QString m_lastProjectPath;
 };

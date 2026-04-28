@@ -47,6 +47,7 @@ set(INFRA_SOURCES
     infrastructure/persistence/mysql/TagMysqlRepo.cpp
     infrastructure/persistence/mysql/UserMysqlRepo.cpp
     infrastructure/persistence/mysql/OperationMysqlRepo.cpp
+    infrastructure/persistence/sqlite/AlarmSqliteRepo.cpp
 )
 
 set(PIPELINE_SOURCES
@@ -129,6 +130,8 @@ set(ALL_HEADERS
     infrastructure/messaging/IMessageBus.h
     infrastructure/messaging/LockFreeRingBuffer.h
     infrastructure/messaging/DoubleBuffer.h
+    infrastructure/messaging/RealtimeDb.h
+    infrastructure/monitoring/PerformanceMonitor.h
     infrastructure/persistence/IAlarmRepo.h
     infrastructure/persistence/IHistoryRepo.h
     infrastructure/persistence/ITagRepo.h

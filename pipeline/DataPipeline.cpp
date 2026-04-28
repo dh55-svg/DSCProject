@@ -77,6 +77,18 @@ void DataPipeline::writeOutput(quint32 tagId, float value) {
 }
 
 void DataPipeline::setAutoMode(quint32 tagId, bool autoMode) {
-    Q_UNUSED(tagId);
-    Q_UNUSED(autoMode);
+    if (m_tagManager) {
+        auto tag = m_tagManager->getTag(tagId);
+        if (tag.tagId != tagId) return;
+        tag.autoMode = autoMode;
+        m_tagManager->updateTag(tagId, tag);
+
+        if (!autoMode && m_fieldbus) {
+            auto snap = m_doubleBuffer.readTag(tagId);
+            float sp = snap.setPoint;
+            quint16 rawSp = static_cast<quint16>(
+                ((sp - tag.engLow) / (tag.engHigh - tag.engLow)) * 65535.0f);
+            m_fieldbus->writeRegister(tag.modbusDeviceId, tag.modbusRegAddr + 1, rawSp);
+        }
+    }
 }

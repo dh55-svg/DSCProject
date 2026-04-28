@@ -1,7 +1,7 @@
-#include "AlarmMysqlRepo.h"
+#include "AlarmSqliteRepo.h"
 #include <QSqlQuery>
 #include <QSqlError>
-#include <QSqlRecord>
+#include <QDateTime>
 #include <QDebug>
 
 namespace {
@@ -75,97 +75,76 @@ AlarmChangeRecord deserializeChangeRecord(const QSqlQuery& q) {
 
 AlarmKpiSnapshot deserializeKpiSnapshot(const QSqlQuery& q) {
     AlarmKpiSnapshot s;
-    s.timestamp          = q.value("timestamp").toLongLong();
-    s.alarmCount10min    = q.value("alarm_count_10min").toInt();
-    s.avgPerHour         = q.value("avg_per_hour").toFloat();
-    s.peakCount10min     = q.value("peak_count_10min").toInt();
-    s.staleCount         = q.value("stale_count").toInt();
+    s.timestamp         = q.value("timestamp").toLongLong();
+    s.alarmCount10min   = q.value("alarm_count_10min").toInt();
+    s.avgPerHour        = q.value("avg_per_hour").toFloat();
+    s.peakCount10min    = q.value("peak_count_10min").toInt();
+    s.staleCount        = q.value("stale_count").toInt();
     s.totalActive        = q.value("total_active").toInt();
-    s.shelvedCount       = q.value("shelved_count").toInt();
-    s.suppressedCount    = q.value("suppressed_count").toInt();
-    s.floodEventCount    = q.value("flood_event_count").toInt();
-    s.floodDurationMin   = q.value("flood_duration_min").toFloat();
-    s.avgAckTimeSec      = q.value("avg_ack_time_sec").toFloat();
-    s.chatteringCount    = q.value("chattering_count").toInt();
-    s.staleAlarmPercent  = q.value("stale_alarm_percent").toInt();
-    s.criticalCount      = q.value("critical_count").toInt();
-    s.majorCount         = q.value("major_count").toInt();
-    s.minorCount         = q.value("minor_count").toInt();
-    s.advisoryCount      = q.value("advisory_count").toInt();
-    s.systemHealthScore  = q.value("health_score").toFloat();
-    s.healthGrade        = q.value("health_grade").toString();
-    s.top5Frequent       = q.value("top5_frequent").toString().split(',', Qt::SkipEmptyParts);
-    s.top5Stale          = q.value("top5_stale").toString().split(',', Qt::SkipEmptyParts);
+    s.shelvedCount      = q.value("shelved_count").toInt();
+    s.suppressedCount   = q.value("suppressed_count").toInt();
+    s.floodEventCount   = q.value("flood_event_count").toInt();
+    s.floodDurationMin  = q.value("flood_duration_min").toFloat();
+    s.avgAckTimeSec     = q.value("avg_ack_time_sec").toFloat();
+    s.chatteringCount   = q.value("chattering_count").toInt();
+    s.staleAlarmPercent = q.value("stale_alarm_percent").toInt();
+    s.criticalCount     = q.value("critical_count").toInt();
+    s.majorCount        = q.value("major_count").toInt();
+    s.minorCount        = q.value("minor_count").toInt();
+    s.advisoryCount     = q.value("advisory_count").toInt();
+    s.systemHealthScore = q.value("health_score").toFloat();
+    s.healthGrade       = q.value("health_grade").toString();
+    s.top5Frequent      = q.value("top5_frequent").toString().split(',', Qt::SkipEmptyParts);
+    s.top5Stale         = q.value("top5_stale").toString().split(',', Qt::SkipEmptyParts);
     return s;
-}
-
-QString priorityListClause(const QList<AlarmPriority>& priorities) {
-    if (priorities.isEmpty()) return QString();
-    QStringList nums;
-    for (auto p : priorities) nums << QString::number(static_cast<int>(p));
-    return QString(" AND priority IN (%1)").arg(nums.join(','));
-}
-
-QString stateListClause(const QList<AlarmState>& states) {
-    if (states.isEmpty()) return QString();
-    QStringList nums;
-    for (auto s : states) nums << QString::number(static_cast<int>(s));
-    return QString(" AND state IN (%1)").arg(nums.join(','));
-}
-
-QString classificationListClause(const QList<AlarmClassification>& classifications) {
-    if (classifications.isEmpty()) return QString();
-    QStringList nums;
-    for (auto c : classifications) nums << QString::number(static_cast<int>(c));
-    return QString(" AND classification IN (%1)").arg(nums.join(','));
 }
 
 } // anonymous namespace
 
-AlarmMysqlRepo::AlarmMysqlRepo(std::shared_ptr<ConnectionPool> pool) : m_pool(pool) {
+AlarmSqliteRepo::AlarmSqliteRepo(std::shared_ptr<ConnectionPool> pool) : m_pool(pool) {
     ensureTables();
 }
 
-void AlarmMysqlRepo::ensureTables() {
+void AlarmSqliteRepo::ensureTables() {
     auto db = m_pool->acquire();
     QSqlQuery q(db);
     q.exec("CREATE TABLE IF NOT EXISTS alarm_events ("
-        "id BIGINT AUTO_INCREMENT PRIMARY KEY, alarm_id VARCHAR(64) UNIQUE, tag_id INT, tag_name VARCHAR(128), "
-        "alarm_limit INT, priority INT, classification INT, description TEXT, trigger_value DOUBLE, "
-        "threshold_value DOUBLE, trigger_time BIGINT, state INT, acknowledged INT, ack_time BIGINT, "
-        "ack_user VARCHAR(64), active INT, rtn_time BIGINT, rtn_ack_time BIGINT, return_value DOUBLE, "
-        "shelved INT, shelved_time BIGINT, shelve_reason TEXT, shelve_duration INT, shelve_user VARCHAR(64), "
-        "suppression_type INT, suppression_reason TEXT, suppression_user VARCHAR(64), suppression_time BIGINT, "
-        "out_of_service INT, oos_reason TEXT, oos_user VARCHAR(64), work_order VARCHAR(64), "
-        "annotation TEXT, annotation_time BIGINT, annotation_user VARCHAR(64), "
-        "area VARCHAR(64), zone VARCHAR(64), notification_type INT, notification_count INT, repeat_count INT, "
-        "first_trigger_time BIGINT)");
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, alarm_id TEXT UNIQUE, tag_id INTEGER, tag_name TEXT, "
+        "alarm_limit INTEGER, priority INTEGER, classification INTEGER, description TEXT, trigger_value REAL, "
+        "threshold_value REAL, trigger_time INTEGER, state INTEGER, acknowledged INTEGER, ack_time INTEGER, "
+        "ack_user TEXT, active INTEGER, rtn_time INTEGER, rtn_ack_time INTEGER, return_value REAL, "
+        "shelved INTEGER, shelved_time INTEGER, shelve_reason TEXT, shelve_duration INTEGER, shelve_user TEXT, "
+        "suppression_type INTEGER, suppression_reason TEXT, suppression_user TEXT, suppression_time INTEGER, "
+        "out_of_service INTEGER, oos_reason TEXT, oos_user TEXT, work_order TEXT, "
+        "annotation TEXT, annotation_time INTEGER, annotation_user TEXT, "
+        "area TEXT, zone TEXT, notification_type INTEGER, notification_count INTEGER, repeat_count INTEGER, "
+        "first_trigger_time INTEGER)");
 
     q.exec("CREATE TABLE IF NOT EXISTS alarm_change_log ("
-        "id BIGINT AUTO_INCREMENT PRIMARY KEY, change_time BIGINT, operator_name VARCHAR(64), "
-        "tag_id INT, field_name VARCHAR(64), old_value TEXT, new_value TEXT, reason TEXT, "
-        "approved INT, approver VARCHAR(64), approve_time BIGINT, rejected INT, reject_reason TEXT, "
-        "work_order VARCHAR(64), valid_until BIGINT, auto_reverted INT, session_id VARCHAR(64), workstation VARCHAR(64))");
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, change_time INTEGER, operator_name TEXT, "
+        "tag_id INTEGER, field_name TEXT, old_value TEXT, new_value TEXT, reason TEXT, "
+        "approved INTEGER, approver TEXT, approve_time INTEGER, rejected INTEGER, reject_reason TEXT, "
+        "work_order TEXT, valid_until INTEGER, auto_reverted INTEGER, session_id TEXT, workstation TEXT)");
 
     q.exec("CREATE TABLE IF NOT EXISTS alarm_kpi_snapshots ("
-        "id BIGINT AUTO_INCREMENT PRIMARY KEY, timestamp BIGINT, alarm_count_10min INT, avg_per_hour DOUBLE, "
-        "peak_count_10min INT, stale_count INT, total_active INT, shelved_count INT, suppressed_count INT, "
-        "flood_event_count INT, flood_duration_min DOUBLE, avg_ack_time_sec DOUBLE, chattering_count INT, "
-        "stale_alarm_percent INT, critical_count INT, major_count INT, minor_count INT, advisory_count INT, "
-        "health_score DOUBLE, health_grade VARCHAR(4), top5_frequent TEXT, top5_stale TEXT)");
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER, alarm_count_10min INTEGER, avg_per_hour REAL, "
+        "peak_count_10min INTEGER, stale_count INTEGER, total_active INTEGER, shelved_count INTEGER, suppressed_count INTEGER, "
+        "flood_event_count INTEGER, flood_duration_min REAL, avg_ack_time_sec REAL, chattering_count INTEGER, "
+        "stale_alarm_percent INTEGER, critical_count INTEGER, major_count INTEGER, minor_count INTEGER, advisory_count INTEGER, "
+        "health_score REAL, health_grade TEXT, top5_frequent TEXT, top5_stale TEXT)");
 
     m_pool->release(db);
 }
 
-void AlarmMysqlRepo::insertEvent(const AlarmEvent& e) {
+void AlarmSqliteRepo::insertEvent(const AlarmEvent& e) {
     batchInsertEvents({e});
 }
 
-void AlarmMysqlRepo::batchInsertEvents(const QVector<AlarmEvent>& events) {
+void AlarmSqliteRepo::batchInsertEvents(const QVector<AlarmEvent>& events) {
     if (events.isEmpty()) return;
     auto db = m_pool->acquire();
     QSqlQuery q(db);
-    q.prepare("INSERT INTO alarm_events (alarm_id, tag_id, tag_name, alarm_limit, priority, classification, "
+    q.prepare("INSERT OR REPLACE INTO alarm_events (alarm_id, tag_id, tag_name, alarm_limit, priority, classification, "
         "description, trigger_value, threshold_value, trigger_time, state, active, area, zone, "
         "suppression_type, notification_type, first_trigger_time) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
@@ -187,12 +166,12 @@ void AlarmMysqlRepo::batchInsertEvents(const QVector<AlarmEvent>& events) {
         q.addBindValue(static_cast<int>(e.suppressionType));
         q.addBindValue(static_cast<int>(e.notificationType));
         q.addBindValue(e.firstTriggerTime > 0 ? e.firstTriggerTime : e.triggerTime);
-        if (!q.exec()) qWarning() << "insertEvent failed:" << q.lastError().text();
+        if (!q.exec()) qWarning() << "AlarmSqliteRepo: insertEvent failed:" << q.lastError().text();
     }
     m_pool->release(db);
 }
 
-void AlarmMysqlRepo::updateAck(const QString& alarmId, const QString& user, qint64 ts) {
+void AlarmSqliteRepo::updateAck(const QString& alarmId, const QString& user, qint64 ts) {
     auto db = m_pool->acquire();
     QSqlQuery q(db);
     q.prepare("UPDATE alarm_events SET acknowledged=1, ack_user=?, ack_time=?, state=? WHERE alarm_id=?");
@@ -200,22 +179,22 @@ void AlarmMysqlRepo::updateAck(const QString& alarmId, const QString& user, qint
     q.addBindValue(ts);
     q.addBindValue(static_cast<int>(AlarmState::ActiveAcknowledged));
     q.addBindValue(alarmId);
-    if (!q.exec()) qWarning() << "updateAck failed:" << q.lastError().text();
+    if (!q.exec()) qWarning() << "AlarmSqliteRepo: updateAck failed:" << q.lastError().text();
     m_pool->release(db);
 }
 
-void AlarmMysqlRepo::updateEvent(const QString& alarmId, const QString& field, const QString& value, qint64 ts) {
+void AlarmSqliteRepo::updateEvent(const QString& alarmId, const QString& field, const QString& value, qint64 ts) {
     auto db = m_pool->acquire();
     QSqlQuery q(db);
     q.prepare(QString("UPDATE alarm_events SET %1=?, trigger_time=? WHERE alarm_id=?").arg(field));
     q.addBindValue(value);
     q.addBindValue(ts);
     q.addBindValue(alarmId);
-    if (!q.exec()) qWarning() << "updateEvent failed:" << q.lastError().text();
+    if (!q.exec()) qWarning() << "AlarmSqliteRepo: updateEvent failed:" << q.lastError().text();
     m_pool->release(db);
 }
 
-QVector<AlarmEvent> AlarmMysqlRepo::queryActive() {
+QVector<AlarmEvent> AlarmSqliteRepo::queryActive() {
     auto db = m_pool->acquire();
     QSqlQuery q(db);
     q.exec("SELECT * FROM alarm_events WHERE active=1 AND shelved=0 AND suppression_type=0 AND out_of_service=0");
@@ -225,35 +204,39 @@ QVector<AlarmEvent> AlarmMysqlRepo::queryActive() {
     return results;
 }
 
-QVector<AlarmEvent> AlarmMysqlRepo::queryEvents(const AlarmFilter& filter, int limit) {
+QVector<AlarmEvent> AlarmSqliteRepo::queryEvents(const AlarmFilter& filter, int limit) {
     auto db = m_pool->acquire();
     QString sql = "SELECT * FROM alarm_events WHERE 1=1";
 
-    sql += priorityListClause(filter.priorities);
-    sql += classificationListClause(filter.classifications);
-    sql += stateListClause(filter.states);
-
+    if (!filter.priorities.isEmpty()) {
+        QStringList nums;
+        for (auto p : filter.priorities) nums << QString::number(static_cast<int>(p));
+        sql += QString(" AND priority IN (%1)").arg(nums.join(','));
+    }
+    if (!filter.classifications.isEmpty()) {
+        QStringList nums;
+        for (auto c : filter.classifications) nums << QString::number(static_cast<int>(c));
+        sql += QString(" AND classification IN (%1)").arg(nums.join(','));
+    }
+    if (!filter.states.isEmpty()) {
+        QStringList nums;
+        for (auto s : filter.states) nums << QString::number(static_cast<int>(s));
+        sql += QString(" AND state IN (%1)").arg(nums.join(','));
+    }
     if (!filter.areas.isEmpty()) {
         QStringList areaList;
         for (const auto& a : filter.areas) areaList << QString("'%1'").arg(a);
         sql += QString(" AND area IN (%1)").arg(areaList.join(','));
     }
-    if (filter.fromTime > 0) {
+    if (filter.fromTime > 0)
         sql += QString(" AND trigger_time >= %1").arg(filter.fromTime);
-    }
-    if (filter.toTime > 0) {
+    if (filter.toTime > 0)
         sql += QString(" AND trigger_time <= %1").arg(filter.toTime);
-    }
-    if (!filter.keyword.isEmpty()) {
-        sql += QString(" AND (tag_name LIKE '%%1%' OR description LIKE '%%1%' OR alarm_id LIKE '%%1%')")
-                   .arg(filter.keyword);
-    }
-    if (!filter.includeShelved)
-        sql += " AND shelved=0";
-    if (!filter.includeSuppressed)
-        sql += " AND suppression_type=0";
-    if (!filter.includeOutOfService)
-        sql += " AND out_of_service=0";
+    if (!filter.keyword.isEmpty())
+        sql += QString(" AND (tag_name LIKE '%%1%' OR description LIKE '%%1%' OR alarm_id LIKE '%%1%')").arg(filter.keyword);
+    if (!filter.includeShelved) sql += " AND shelved=0";
+    if (!filter.includeSuppressed) sql += " AND suppression_type=0";
+    if (!filter.includeOutOfService) sql += " AND out_of_service=0";
 
     sql += " ORDER BY trigger_time DESC";
     if (limit > 0) sql += QString(" LIMIT %1").arg(limit);
@@ -266,7 +249,7 @@ QVector<AlarmEvent> AlarmMysqlRepo::queryEvents(const AlarmFilter& filter, int l
     return results;
 }
 
-QVector<AlarmEvent> AlarmMysqlRepo::queryHistory(qint64 start, qint64 end, int limit) {
+QVector<AlarmEvent> AlarmSqliteRepo::queryHistory(qint64 start, qint64 end, int limit) {
     auto db = m_pool->acquire();
     QSqlQuery q(db);
     q.prepare("SELECT * FROM alarm_events WHERE trigger_time >= ? AND trigger_time <= ? ORDER BY trigger_time DESC LIMIT ?");
@@ -280,12 +263,11 @@ QVector<AlarmEvent> AlarmMysqlRepo::queryHistory(qint64 start, qint64 end, int l
     return results;
 }
 
-void AlarmMysqlRepo::insertChangeRecord(const AlarmChangeRecord& r) {
+void AlarmSqliteRepo::insertChangeRecord(const AlarmChangeRecord& r) {
     auto db = m_pool->acquire();
     QSqlQuery q(db);
-    q.prepare("INSERT INTO alarm_change_log (change_time, operator_name, tag_id, field_name, old_value, new_value, reason, "
-        "approved, approver, approve_time, rejected, reject_reason, work_order, valid_until, auto_reverted, session_id, workstation) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    q.prepare("INSERT INTO alarm_change_log (change_time, operator_name, tag_id, field_name, old_value, new_value, reason) "
+        "VALUES (?,?,?,?,?,?,?)");
     q.addBindValue(r.changeTime);
     q.addBindValue(r.operatorName);
     q.addBindValue(r.tagId);
@@ -293,21 +275,11 @@ void AlarmMysqlRepo::insertChangeRecord(const AlarmChangeRecord& r) {
     q.addBindValue(r.oldValue);
     q.addBindValue(r.newValue);
     q.addBindValue(r.reason);
-    q.addBindValue(r.approved ? 1 : 0);
-    q.addBindValue(r.approver);
-    q.addBindValue(r.approveTime);
-    q.addBindValue(r.rejected ? 1 : 0);
-    q.addBindValue(r.rejectReason);
-    q.addBindValue(r.workOrderNo);
-    q.addBindValue(r.validUntil);
-    q.addBindValue(r.autoReverted ? 1 : 0);
-    q.addBindValue(r.sessionId);
-    q.addBindValue(r.workstation);
-    if (!q.exec()) qWarning() << "insertChangeRecord failed:" << q.lastError().text();
+    if (!q.exec()) qWarning() << "AlarmSqliteRepo: insertChangeRecord failed:" << q.lastError().text();
     m_pool->release(db);
 }
 
-QVector<AlarmChangeRecord> AlarmMysqlRepo::queryChangeRecords(quint32 tagId, int limit) {
+QVector<AlarmChangeRecord> AlarmSqliteRepo::queryChangeRecords(quint32 tagId, int limit) {
     auto db = m_pool->acquire();
     QSqlQuery q(db);
     q.prepare("SELECT * FROM alarm_change_log WHERE tag_id=? ORDER BY change_time DESC LIMIT ?");
@@ -320,7 +292,7 @@ QVector<AlarmChangeRecord> AlarmMysqlRepo::queryChangeRecords(quint32 tagId, int
     return results;
 }
 
-QVector<AlarmChangeRecord> AlarmMysqlRepo::queryPendingApprovals() {
+QVector<AlarmChangeRecord> AlarmSqliteRepo::queryPendingApprovals() {
     auto db = m_pool->acquire();
     QSqlQuery q(db);
     q.exec("SELECT * FROM alarm_change_log WHERE approved=0 AND rejected=0 ORDER BY change_time DESC LIMIT 200");
@@ -330,7 +302,7 @@ QVector<AlarmChangeRecord> AlarmMysqlRepo::queryPendingApprovals() {
     return results;
 }
 
-void AlarmMysqlRepo::updateChangeApproval(int recordId, bool approved, const QString& approver, const QString& rejectReason) {
+void AlarmSqliteRepo::updateChangeApproval(int recordId, bool approved, const QString& approver, const QString& rejectReason) {
     auto db = m_pool->acquire();
     QSqlQuery q(db);
     q.prepare("UPDATE alarm_change_log SET approved=?, approver=?, approve_time=?, rejected=?, reject_reason=? WHERE id=?");
@@ -340,11 +312,11 @@ void AlarmMysqlRepo::updateChangeApproval(int recordId, bool approved, const QSt
     q.addBindValue(approved ? 0 : 1);
     q.addBindValue(rejectReason);
     q.addBindValue(recordId);
-    if (!q.exec()) qWarning() << "updateChangeApproval failed:" << q.lastError().text();
+    if (!q.exec()) qWarning() << "AlarmSqliteRepo: updateChangeApproval failed:" << q.lastError().text();
     m_pool->release(db);
 }
 
-void AlarmMysqlRepo::insertKpiSnapshot(const AlarmKpiSnapshot& s) {
+void AlarmSqliteRepo::insertKpiSnapshot(const AlarmKpiSnapshot& s) {
     auto db = m_pool->acquire();
     QSqlQuery q(db);
     q.prepare("INSERT INTO alarm_kpi_snapshots (timestamp, alarm_count_10min, avg_per_hour, peak_count_10min, "
@@ -373,11 +345,11 @@ void AlarmMysqlRepo::insertKpiSnapshot(const AlarmKpiSnapshot& s) {
     q.addBindValue(s.healthGrade);
     q.addBindValue(s.top5Frequent.join(','));
     q.addBindValue(s.top5Stale.join(','));
-    if (!q.exec()) qWarning() << "insertKpiSnapshot failed:" << q.lastError().text();
+    if (!q.exec()) qWarning() << "AlarmSqliteRepo: insertKpiSnapshot failed:" << q.lastError().text();
     m_pool->release(db);
 }
 
-QVector<AlarmKpiSnapshot> AlarmMysqlRepo::queryKpiHistory(qint64 start, qint64 end, int limit) {
+QVector<AlarmKpiSnapshot> AlarmSqliteRepo::queryKpiHistory(qint64 start, qint64 end, int limit) {
     auto db = m_pool->acquire();
     QSqlQuery q(db);
     q.prepare("SELECT * FROM alarm_kpi_snapshots WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT ?");
@@ -391,25 +363,20 @@ QVector<AlarmKpiSnapshot> AlarmMysqlRepo::queryKpiHistory(qint64 start, qint64 e
     return results;
 }
 
-void AlarmMysqlRepo::purgeOldRecords(int keepDays) {
+void AlarmSqliteRepo::purgeOldRecords(int keepDays) {
     auto db = m_pool->acquire();
     qint64 now = QDateTime::currentMSecsSinceEpoch();
     qint64 alarmCutoff = now - static_cast<qint64>(365) * 86400000LL;
     qint64 changeCutoff = now - static_cast<qint64>(730) * 86400000LL;
     qint64 kpiCutoff = now - static_cast<qint64>(90) * 86400000LL;
+    Q_UNUSED(keepDays);
 
     QSqlQuery q(db);
     q.prepare("DELETE FROM alarm_events WHERE trigger_time < ?");
-    q.addBindValue(alarmCutoff);
-    q.exec();
-
+    q.addBindValue(alarmCutoff); q.exec();
     q.prepare("DELETE FROM alarm_change_log WHERE change_time < ?");
-    q.addBindValue(changeCutoff);
-    q.exec();
-
+    q.addBindValue(changeCutoff); q.exec();
     q.prepare("DELETE FROM alarm_kpi_snapshots WHERE timestamp < ?");
-    q.addBindValue(kpiCutoff);
-    q.exec();
-    Q_UNUSED(keepDays); // Use ISA-18.2 standard retention periods
+    q.addBindValue(kpiCutoff); q.exec();
     m_pool->release(db);
 }

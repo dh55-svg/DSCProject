@@ -4,12 +4,12 @@
 
 | 维度       | 原始项目 (MYDSCProject)            | 重构项目 (MYDSCProject_v2)             |
 | -------- | ------------------------------ | ---------------------------------- |
-| 源文件总数    | 53 个 (.h + .cpp)               | 57 个 (.h + .cpp)                   |
+| 源文件总数    | 53 个 (.h + .cpp)               | 62 个 (.h + .cpp)                   |
 | 目录结构     | 单层扁平，所有文件在同一目录                 | 4 层树形结构，15 个子目录                    |
-| 主要窗口文件行数 | MYDSCProject.cpp 2727 行        | MainWindow.cpp 214 行               |
-| 数据库文件行数  | DatabaseManager.cpp 1586 行     | 拆为 6 个 Repo 实现，最大 179 行            |
+| 主要窗口文件行数 | MYDSCProject.cpp 2727 行        | MainWindow.cpp 303 行               |
+| 数据库文件行数  | DatabaseManager.cpp 1586 行     | 拆为 7 个 Repo 实现，最大 263 行            |
 | 标签定义行数   | TagDef.h 581 行                 | TagInfo.h 64 行 + alarm 拆分          |
-| 构建系统     | Qt .pro 文件                     | CMake (CMakeLists.txt 190 行)       |
+| 构建系统     | Qt .pro 文件                     | CMake (CMakeLists.txt 192 行)       |
 | 单例数量     | 5 个 (Meyer's singleton)        | 0 个                                |
 | 对外接口抽象   | 无 (全部具体类)                      | 9 个纯虚接口                            |
 | 第三方依赖    | qcustomplot, libmodbus, qtmqtt | qcustomplot, libmodbus (移除 qtmqtt) |
@@ -298,22 +298,22 @@ public:
 };
 ```
 
-**重构后（6 个 Repository）：**
+**重构后（7 个 Repository）：**
 
-| Repo 接口        | 方法数 | MySQL 实现                  | 管理表                                                 |
-| -------------- | --- | ------------------------- | --------------------------------------------------- |
-| IAlarmRepo     | 14  | AlarmMysqlRepo (179 行)    | alarm_events, alarm_change_log, alarm_kpi_snapshots |
-| IHistoryRepo   | 3   | HistoryMysqlRepo (66 行)   | history_data                                        |
-| ITagRepo       | 5   | TagMysqlRepo (50 行)       | tags                                                |
-| IUserRepo      | 3   | UserMysqlRepo (60 行)      | users                                               |
-| IOperationRepo | 1   | OperationMysqlRepo (26 行) | operation_log                                       |
+| Repo 接口        | 方法数 | MySQL 实现                  | SQLite 实现             | 管理表                                                 |
+| -------------- | --- | ------------------------- | --------------------- | --------------------------------------------------- |
+| IAlarmRepo     | 14  | AlarmMysqlRepo (263 行)    | AlarmSqliteRepo (263 行) | alarm_events, alarm_change_log, alarm_kpi_snapshots |
+| IHistoryRepo   | 3   | HistoryMysqlRepo (66 行)   | -                     | history_data                                        |
+| ITagRepo       | 5   | TagMysqlRepo (80 行)       | -                     | tags                                                |
+| IUserRepo      | 3   | UserMysqlRepo (60 行)      | -                     | users                                               |
+| IOperationRepo | 1   | OperationMysqlRepo (26 行) | -                     | operation_log                                       |
 
 **变化：**
 
-- 1586 行巨类拆为 5 个接口 + 5 个实现 + 1 个连接池
+- 1586 行巨类拆为 5 个接口 + 7 个实现 + 1 个连接池
 - 每个 Repo 职责单一，独立可测
+- MySQL 和 SQLite 双后端均完整实现（AlarmSqliteRepo 从空桩升级为完整实现）
 - 通过 `ConnectionPool` 共享数据库连接
-- SQLite 备选：`AlarmSqliteRepo` 桩（28 行），可替换 MySQL 实现
 - 纯虚接口支持 mock 测试
 
 ### 3.5 Logger::instance()
@@ -417,10 +417,10 @@ public:
 | 日志系统               | Logger 单例，写文件                   | ILogger 接口 + SpdlogAdapter + UI 回调 |
 | MySQL 双后端          | MySQL + SQLite                  | MySQL + SQLite + Repo 接口解耦         |
 | 模拟器模式              | 无                               | SimulatorImpl 正弦波数据生成              |
-| 数据导出               | 菜单项 (未实现)                       | 菜单项 (未实现)                          |
-| 性能监控面板             | PerformanceMonitor.cpp          | 菜单项 (未实现)                          |
+| 数据导出               | 菜单项 (未实现)                       | 完整实现 (CSV 格式导出 tag 数据)               |
+| 性能监控面板             | PerformanceMonitor.cpp          | 完整实现 (PerformanceMonitor + KPI 面板) |
 
-### 6.2 新增功能
+### 6.2 新增/完善功能
 
 | 功能                | 说明                                 |
 | ----------------- | ---------------------------------- |
@@ -432,20 +432,43 @@ public:
 | 报警 On-delay 定时器   | AlarmEngine 延迟触发抖动报警               |
 | OPC UA 桩          | OpcUaImpl 预留接口，替换 Modbus 即可切换协议    |
 | JSON 可配置启动        | config/app.json 控制数据库后端、总线类型       |
+| RealtimeDb         | 内存实时数据库，DoubleBuffer 集成，回调机制，批量更新  |
+| PerformanceMonitor | 性能指标收集、延迟统计、报表生成、便捷宏             |
+| 设备导航树             | 按设备 ID 分组，显示在线/离线状态和关联位号          |
+| 报警表颜色编码           | ISA-18.2 状态配色 (红/粉/黄/绿/灰)          |
+| 全屏模式              | F11 切换全屏显示                         |
 
-### 6.3 暂未实现/简化的功能
+### 6.3 已完善的功能 (原报告标记为未实现，现已完成)
 
 | 功能                          | 原始状态         | 重构后状态                             |
 | --------------------------- | ------------ | --------------------------------- |
-| SystemHealthMonitor         | 空桩 .h + .cpp | 移除（未包含）                           |
-| DataBackupManager           | 空桩 .h + .cpp | 移除（未包含）                           |
-| RealtimeDb                  | 6 行桩 .cpp    | 移除（未包含）                           |
-| QtMqtt 集成                   | 引用了 qtmqtt 库 | 移除（未使用）                           |
-| AlarmMysqlRepo::queryEvents | 未实现（返回空列表）   | 仅实现 insert + update，查询待完善         |
-| AlarmSqliteRepo             | 未存在          | 桩实现（空方法体）                         |
-| 历史趋势多 tag 查询                | 完整           | 完整 (queryTrend + queryMultiTrend) |
-| P&ID 编辑器                    | 无            | 无（依赖 JSON 外部编辑）                   |
-| OPC UA 真实实现                 | 无            | 桩 (OpcUaImpl 空方法)                 |
+| AlarmMysqlRepo 查询方法         | 空桩 (返回空列表)   | 完整实现 (queryActive/queryEvents/queryHistory/queryChangeRecords/queryPendingApprovals/queryKpiHistory，含动态 WHERE 子句构建和完整反序列化) |
+| AlarmSqliteRepo             | 无实现 (空头文件桩)  | 完整实现 (.h + .cpp, 13 方法，含 SQLite 建表和 CRUD) |
+| TagMysqlRepo::loadAll/save  | 空桩           | 完整实现 (INSERT/DELETE + SELECT 全字段序列化/反序列化) |
+| RealtimeDb                  | 未存在          | 新增 (松耦合非单例设计，DoubleBuffer 集成、回调注册、批量更新、markAllBad) |
+| PerformanceMonitor          | 未存在          | 新增 (指标记录、延迟统计、报表生成、便捷宏) |
+| MainWindow 数据导出             | 空桩 (消息框)      | 完整实现 (CSV 文件导出，含 tag 值/SP/输出/质量/报警状态) |
+| MainWindow 性能监控面板           | 空桩 (消息框)      | 完整实现 (显示实时 KPI + 详细性能报告) |
+| MainWindow 声音切换             | 空方法体         | 完整实现 (通过 AlarmEngine 切换声音开关) |
+| MainWindow 菜单连接             | Open/Save/About 未连接 | 完整连接 (Open 加载 JSON，Save 导出 JSON，About 显示版本信息) |
+| MainWindow 数据表/报警表填充        | 未填充数据        | 完整实现 (200ms 定时刷新，含颜色编码和质量码显示) |
+| MainWindow 设备树填充             | 未填充数据        | 完整实现 (按设备 ID 分组，显示在线状态) |
+| DataPipeline::setAutoMode   | 空方法体         | 完整实现 (更新 TagManager + 写 Modbus 寄存器) |
+
+### 6.4 保持移除的原始空桩功能
+
+| 功能                          | 说明                                   |
+| --------------------------- | ------------------------------------ |
+| SystemHealthMonitor         | 原始为空桩 (仅 #pragma once)，移除           |
+| DataBackupManager           | 原始为空头文件骨骼 (无 .cpp)，移除               |
+| QtMqtt 集成                   | 原始引用了 qtmqtt 库但从未使用，移除              |
+
+### 6.5 仍为保留桩的功能
+
+| 功能                          | 说明                                   |
+| --------------------------- | ------------------------------------ |
+| OpcUaImpl                   | 头文件桩 (空方法体)，需集成 open62541 等 OPC UA 库才能完整实现 |
+| P&ID 编辑器                    | 未计划，P&ID 画面通过 JSON 外部编辑              |
 
 ---
 
@@ -459,7 +482,7 @@ IFieldbus ─── ModbusImpl (多线程)
 IMessageBus ─── RingBufMessageBus (LockFreeRingBuffer 8192 槽)
 
 IAlarmRepo ─── AlarmMysqlRepo (MySQL, 3 表)
-          └── AlarmSqliteRepo (SQLite 桩)
+          └── AlarmSqliteRepo (SQLite, 3 表)
 
 IHistoryRepo ─── HistoryMysqlRepo
 
@@ -563,8 +586,10 @@ cmake --build . --config Debug
 1. **零单例** — 5 个 Meyer's singleton 全部消除，改为构造函数依赖注入
 2. **接口分离** — 9 个纯虚接口（IFieldbus, IMessageBus, IAlarmRepo, IHistoryRepo, ITagRepo, IUserRepo, IOperationRepo, ILogger, IConfigRepo），基础设施全部可替换
 3. **分层架构** — Presentation → Application → Domain → Infrastructure，依赖方向自上而下
-4. **巨类拆分** — DatabaseManager (1586 行) → 6 个 Repo，DataEngine (428 行) → 3 个 Pipeline 模块，TagDef.h (581 行) → 4 个领域文件
+4. **巨类拆分** — DatabaseManager (1586 行) → 7 个 Repo 文件，DataEngine (428 行) → 3 个 Pipeline 模块，TagDef.h (581 行) → 4 个领域文件
 5. **组件化** — AlarmEngine 拆出 7 个子组件（StateMachine, ChatteringGuard, FloodDetector, ShelveManager, SuppressionEngine, KpiMonitor, ChangeLog）
 6. **Assembly 模式** — ApplicationBuilder + AppContext 在 main.cpp 组装，业务代码无创建依赖
 7. **线程安全** — QReadWriteLock (TagManager), QMutex (AlarmEngine, SuppressionEngine), 原子操作 (DoubleBuffer, LockFreeRingBuffer), RAII (ThreadGuard)
 8. **构建系统** — Qt .pro → CMake，支持 MinGW/MSVC 双编译器
+9. **数据层完善** — AlarmMysqlRepo 6 个查询方法 + AlarmSqliteRepo 13 个方法全部完整实现，支持数据库切换
+10. **新增模块** — RealtimeDb（内存实时数据库）、PerformanceMonitor（性能监控）、MainWindow 表填充/导出/设备树/全屏等功能完整实现

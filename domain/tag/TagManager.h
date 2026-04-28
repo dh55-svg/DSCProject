@@ -30,6 +30,7 @@ public:
     ModbusMapping getModbusMapping(quint32 tagId) const;
     quint32 findTagByModbusAddr(int serverAddr, int regAddr) const;
 
+    bool updateTag(quint32 tagId, const TagInfo& tag);
     bool updateAlarmLimits(quint32 tagId, const AlarmLimits& limits);
     bool updateRange(quint32 tagId, float engLow, float engHigh);
 

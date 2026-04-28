@@ -105,6 +105,26 @@ quint32 TagManager::findTagByModbusAddr(int serverAddr, int regAddr) const {
     return m_modbusAddrIndex.value(modbusKey, 0);
 }
 
+bool TagManager::updateTag(quint32 tagId, const TagInfo& tag) {
+    QWriteLocker lock(&m_rwlock);
+    auto it = m_tags.find(tagId);
+    if (it == m_tags.end()) return false;
+
+    if (it->tagName != tag.tagName) {
+        m_nameIndex.remove(it->tagName);
+        m_nameIndex.insert(tag.tagName, tagId);
+    }
+    quint32 oldKey = (static_cast<quint32>(it->modbusServerAddr) << 16) | static_cast<quint32>(it->modbusRegAddr);
+    quint32 newKey = (static_cast<quint32>(tag.modbusServerAddr) << 16) | static_cast<quint32>(tag.modbusRegAddr);
+    if (oldKey != newKey) {
+        m_modbusAddrIndex.remove(oldKey);
+        m_modbusAddrIndex.insert(newKey, tagId);
+    }
+    *it = tag;
+    emit configChanged(tagId);
+    return true;
+}
+
 bool TagManager::updateAlarmLimits(quint32 tagId, const AlarmLimits& limits) {
     QWriteLocker lock(&m_rwlock);
     auto it = m_tags.find(tagId);
